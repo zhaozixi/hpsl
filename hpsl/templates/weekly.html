@@ -12,7 +12,7 @@
 <p><small>目标：{{ project.goal }}</small></p>
 
 {{ help_banner("周盘点：一屏把本周的缺口裁掉",
-   "每周花几分钟，把还没处理的缺口逐条裁决：已经补好就选「已补」，不打算补就选「废弃」，然后点最下方的「批量提交」。提交后页面会自动刷新。") }}
+   "每周花几分钟，把还没处理的缺口逐条裁决：已经补好选「已补」，不打算补选「废弃」，暂时没空就勾「下周再看」，需要先补前置就填在「前置」里。最后点「批量提交」，页面会自动刷新。") }}
 
 <!-- 难度建议（M9 suggest_band；仅建议，可忽略） -->
 <section>
@@ -37,9 +37,9 @@
   {% endif %}
 </section>
 
-{% if gaps or backlog_l1 %}
+{% if gaps or backlog_l1 or deferred %}
 <form id="weekly-batch"
-      hx-post="/api/v1/gaps/status-batch"
+      hx-post="/api/v1/gaps/weekly-batch"
       hx-target="#batch-result"
       hx-swap="innerHTML">
 
@@ -50,7 +50,7 @@
     <div class="table-wrap">
       <table class="table" id="weekly-gap-table">
         <thead>
-          <tr><th>单元</th><th>级别</th><th>缺口</th><th>当前状态</th><th>裁决</th></tr>
+          <tr><th>单元</th><th>级别</th><th>缺口</th><th>当前状态</th><th>前置</th><th>裁决</th><th>下周再看</th></tr>
         </thead>
         <tbody>
         {% for g in gaps %}
@@ -59,13 +59,17 @@
             <td>{{ gap_badge(g.level) }}</td>
             <td>{{ g.text }}</td>
             <td>{{ g.status }}</td>
+            <td><input class="input" type="text" name="prereq-{{ g.id }}" maxlength="200"
+                       value="{{ g.prereq or '' }}" placeholder="需要先补什么（可留空）"
+                       aria-label="缺口 {{ g.id }} 的前置"></td>
             <td>
-              <input type="hidden" name="gid" value="{{ g.id }}">
-              <select name="status" aria-label="裁决缺口 {{ g.id }}">
-                <option value="已补" selected>已补</option>
+              <select name="status-{{ g.id }}" aria-label="裁决缺口 {{ g.id }}">
+                <option value="">不改变</option>
+                <option value="已补">已补</option>
                 <option value="废弃">废弃</option>
               </select>
             </td>
+            <td><label><input type="checkbox" name="defer-{{ g.id }}" value="7"> 推迟 7 天</label></td>
           </tr>
         {% endfor %}
         </tbody>
@@ -83,7 +87,7 @@
     <div class="table-wrap">
       <table class="table" id="weekly-backlog-table">
         <thead>
-          <tr><th>单元</th><th>级别</th><th>缺口</th><th>当前状态</th><th>裁决</th></tr>
+          <tr><th>单元</th><th>级别</th><th>缺口</th><th>当前状态</th><th>裁决</th><th>下周再看</th></tr>
         </thead>
         <tbody>
         {% for g in backlog_l1 %}
@@ -93,12 +97,13 @@
             <td>{{ g.text }}</td>
             <td>{{ g.status }}</td>
             <td>
-              <input type="hidden" name="gid" value="{{ g.id }}">
-              <select name="status" aria-label="裁决缺口 {{ g.id }}">
-                <option value="已补" selected>已补</option>
+              <select name="status-{{ g.id }}" aria-label="裁决缺口 {{ g.id }}">
+                <option value="">不改变</option>
+                <option value="已补">已补</option>
                 <option value="废弃">废弃</option>
               </select>
             </td>
+            <td><label><input type="checkbox" name="defer-{{ g.id }}" value="7"> 推迟 7 天</label></td>
           </tr>
         {% endfor %}
         </tbody>
@@ -115,6 +120,22 @@
   </p>
 </form>
 <div id="batch-result"></div>
+
+{% if deferred %}
+<section>
+  <h2>下周再看（{{ deferred|length }}）</h2>
+  <p class="text-muted">这些缺口被推迟了，到期后会自动回到上方清单；要改主意可在上方重新提交。</p>
+  <ul class="list-clean">
+    {% for g in deferred %}
+    <li id="deferred-{{ g.id }}">
+      {{ gap_badge(g.level) }} <b>{{ g.text }}</b>
+      <small class="text-muted">· {{ g.unit_title or g.unit_id or "—" }} · 推迟到 {{ g.defer_until }}
+        {% if g.prereq %}· 前置：{{ g.prereq }}{% endif %}</small>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 {% else %}
   <p class="ok">本周没有待补的缺口，继续保持！</p>
 {% endif %}

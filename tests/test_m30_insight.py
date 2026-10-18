@@ -301,8 +301,8 @@ def test_weekly_page_lists_pending_gaps(client, csrf_headers):
     ):
         assert expected in text, expected
     assert "缺口-已补不该出现" not in text
-    assert 'hx-post="/api/v1/gaps/status-batch"' in text
-    assert 'name="status"' in text
+    assert 'hx-post="/api/v1/gaps/weekly-batch"' in text
+    assert 'name="status-' in text
     assert '<option value="已补"' in text
     assert '<option value="废弃"' in text
     assert 'class="table-wrap"' in text

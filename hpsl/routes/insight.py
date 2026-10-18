@@ -18,6 +18,8 @@ REST（api_router，prefix=/api/v1）：
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +68,43 @@ def _batch_fragment(updated: int, skipped: int) -> HTMLResponse:
 
 
 # ---------------------------------------------------------------------------
+# 缺口元信息（E-07）：推迟到某天 / 需要先补前置；存 gap.context JSON（零 DDL）
+# ---------------------------------------------------------------------------
+def _context_dict(raw: Any) -> dict:
+    """gap.context 为 TEXT JSON（db.query 不自动解析）；坏数据回退空 dict。"""
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _today_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _defer_date(days: int) -> str:
+    return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+def _validate_meta(status: Any, defer_days: Any, prereq: Any) -> None:
+    """先全量校验，避免批量中途留下部分写入。"""
+    if status not in (None, "") and status not in _ALLOWED_GAP_STATUSES:
+        raise BizError("C400001", msg="status 仅允许 已补 / 已验证 / 废弃")
+    if defer_days not in (None, ""):
+        try:
+            days = int(defer_days)
+        except (TypeError, ValueError):
+            raise BizError("C400001", msg="defer_days 须为 1~365 的整数")
+        if not (1 <= days <= 365):
+            raise BizError("C400001", msg="defer_days 须为 1~365 的整数")
+    if prereq is not None and (not isinstance(prereq, str) or len(prereq) > 200):
+        raise BizError("C400001", msg="prereq 须为 ≤200 字符的字符串")
+
+
+# ---------------------------------------------------------------------------
 # REST：GET /api/v1/bands（难度建议）
 # ---------------------------------------------------------------------------
 @api_router.get("/bands", dependencies=[Depends(read_security)])
@@ -93,14 +132,14 @@ def concepts_decay_api():
 # 页面：GET /weekly（周盘点一屏批量裁决）
 # ---------------------------------------------------------------------------
 _REVIEW_GAPS_SQL = (
-    "SELECT gap.id, gap.unit_id, gap.level, gap.text, gap.status, gap.created_at, "
+    "SELECT gap.id, gap.unit_id, gap.level, gap.text, gap.status, gap.context, gap.created_at, "
     "unit.title AS unit_title "
     "FROM gap LEFT JOIN unit ON gap.unit_id = unit.id "
     "WHERE gap.level IN (2, 3) AND gap.status = '待补' "
     "ORDER BY gap.level DESC, gap.created_at ASC, gap.id ASC"
 )
 _BACKLOG_L1_SQL = (
-    "SELECT gap.id, gap.unit_id, gap.level, gap.text, gap.status, gap.created_at, "
+    "SELECT gap.id, gap.unit_id, gap.level, gap.text, gap.status, gap.context, gap.created_at, "
     "unit.title AS unit_title "
     "FROM gap LEFT JOIN unit ON gap.unit_id = unit.id "
     "WHERE gap.level = 1 AND gap.status = '待补' "
@@ -118,8 +157,21 @@ def weekly_page(req: Request):
             context={"error": "尚未选择项目，请先在首页选择或新建项目"},
         )
     pid = active.id
-    review_gaps = db.query(pid, _REVIEW_GAPS_SQL)
+    review_rows = db.query(pid, _REVIEW_GAPS_SQL)
     backlog_l1 = db.query(pid, _BACKLOG_L1_SQL)
+
+    # E-07：按 gap.context.defer_until 分出「本周处理」与「下周再看」
+    today = _today_utc()
+    for g in review_rows:
+        meta = _context_dict(g.get("context"))
+        g["defer_until"] = meta.get("defer_until")
+        g["prereq"] = meta.get("prereq")
+    review_gaps = [
+        g for g in review_rows if not g["defer_until"] or g["defer_until"] <= today
+    ]
+    deferred = [
+        g for g in review_rows if g["defer_until"] and g["defer_until"] > today
+    ]
 
     counts = governance.compute_counts(pid)
     cfg = proj.get_effective_config(pid)
@@ -133,6 +185,7 @@ def weekly_page(req: Request):
             "project": active.to_dict(),
             "gaps": review_gaps,
             "backlog_l1": backlog_l1,
+            "deferred": deferred,
             "band": band,
             "stale_concepts": sum(
                 1
@@ -228,6 +281,121 @@ async def gaps_status_batch_api(req: Request):
             {"id": gid, "status": it["status"], "updated_at": _now_utc()},
             "user",
         )
+        updated += 1
+
+    if _is_htmx(req):
+        return _batch_fragment(updated, skipped)
+    return ok({"updated": updated, "skipped": skipped})
+
+
+# ---------------------------------------------------------------------------
+# REST：POST /api/v1/gaps/weekly-batch（E-07：状态 + 推迟 + 前置一次提交）
+# ---------------------------------------------------------------------------
+def _weekly_json_items(body: Any) -> list[dict]:
+    if not isinstance(body, dict):
+        raise BizError("C400001", msg="请求体需为 JSON 对象")
+    raw = body.get("items")
+    if not isinstance(raw, list):
+        raise BizError("C400001", msg="items 必须为数组")
+    out: list[dict] = []
+    for it in raw:
+        if not isinstance(it, dict):
+            raise BizError("C400001", msg="items 的每一项都必须是对象")
+        out.append(
+            {
+                "id": it.get("id"),
+                "status": it.get("status"),
+                "defer_days": it.get("defer_days"),
+                "prereq": it.get("prereq"),
+            }
+        )
+    return out
+
+
+def _weekly_form_items(form) -> list[dict]:
+    """表单按行字段名归一：`status-<gid>` / `defer-<gid>` / `prereq-<gid>`。"""
+    items: dict[str, dict] = {}
+    for key, value in form.multi_items():
+        for prefix, field in (
+            ("status-", "status"),
+            ("defer-", "defer_days"),
+            ("prereq-", "prereq"),
+        ):
+            if not key.startswith(prefix):
+                continue
+            gid = key[len(prefix):].strip()
+            if not gid:
+                continue
+            if field == "status" and not value:
+                continue
+            if field == "prereq" and not str(value).strip():
+                continue
+            if field == "defer_days" and not value:
+                continue
+            items.setdefault(gid, {"id": gid})[field] = value
+            break
+    return list(items.values())
+
+
+async def _parse_weekly_items(req: Request) -> list[dict]:
+    if "application/json" in req.headers.get("content-type", ""):
+        try:
+            body = await req.json()
+        except Exception:
+            raise BizError("C400001", msg="请求体需为 JSON")
+        return _weekly_json_items(body)
+    try:
+        form = await req.form()
+    except Exception:
+        raise BizError("C400001", msg="请求体需为 JSON 或表单")
+    return _weekly_form_items(form)
+
+
+@api_router.post("/gaps/weekly-batch", dependencies=[Depends(write_security)])
+async def gaps_weekly_batch_api(req: Request):
+    """周盘点批量提交：状态 + 推迟天数 + 前置说明，逐条 db.write（审计可撤销）。
+
+    - status ∈ {已补,已验证,废弃}（可省略 = 只改元信息）；
+    - defer_days ∈ 1~365（写入 `gap.context.defer_until`，到期自动回到本周清单）；
+    - prereq ≤200 字符（写入 `gap.context.prereq`）；
+    - 先全量校验再写；不存在 id / 无任何动作 → skipped。
+    """
+    pid = _require_pid()
+    items = await _parse_weekly_items(req)
+    for it in items:
+        _validate_meta(it.get("status"), it.get("defer_days"), it.get("prereq"))
+
+    known_ids = {r["id"] for r in db.query(pid, "SELECT id FROM gap")}
+    updated = skipped = 0
+    seen: set[str] = set()
+    for it in items:
+        gid = it.get("id")
+        if not isinstance(gid, str) or not gid.strip():
+            raise BizError("C400001", msg="每条 items 需提供缺口 id")
+        gid = gid.strip()
+        if gid not in known_ids or gid in seen:
+            skipped += 1
+            continue
+        seen.add(gid)
+
+        has_action = bool(it.get("status") or it.get("defer_days") or it.get("prereq"))
+        if not has_action:
+            skipped += 1
+            continue
+
+        rows = db.query(pid, "SELECT context FROM gap WHERE id=?", (gid,))
+        ctx = _context_dict(rows[0].get("context")) if rows else {}
+        patch: dict = {"id": gid}
+        if it.get("defer_days"):
+            ctx["defer_until"] = _defer_date(int(it["defer_days"]))
+        if it.get("prereq"):
+            ctx["prereq"] = str(it["prereq"]).strip()
+        if it.get("status"):
+            patch["status"] = it["status"]
+        # gap.context 不在 db.JSON_COLUMNS 中，需自行序列化为 TEXT
+        patch["context"] = json.dumps(ctx, ensure_ascii=False)
+        patch["updated_at"] = _now_utc()
+        db.write(pid, "gap", patch, "user")
         updated += 1
 
     if _is_htmx(req):

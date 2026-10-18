@@ -45,7 +45,7 @@ export HPSL_MASTER_PASSPHRASE="换成一个足够长的口令"      # bash
 hpsl serve
 # 浏览器打开 http://127.0.0.1:8765
 
-# 运行全量测试（M0–M31，约 540 例，含零 DDL 守护）
+# 运行全量测试（M0–M31，约 548 例，含零 DDL 守护）
 pytest -q
 ```
 
