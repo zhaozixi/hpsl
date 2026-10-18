@@ -29,6 +29,8 @@
 
 ## 1. P0：阻断主链 / 触碰安全红线（8 项）
 
+> **修复状态（2026-10-18 · M24 P0-A）**：P0-01 / 02 / 03 / 04 **已修复**——新增 5 个端点（建单元 / 产出 / 尝试 / 闭环 / 角色调用），复测在闭环后自动入队，角色调用经 `record_call` 写 `llm_call`；新增 22 例测试，全量 **358 passed**，零 DDL 不变。P0-05 ~ P0-08（密钥口令 / 限流两维 / Host 前缀 / 关闭 docs）**未动**，待安全取舍决策。详见 [M24-交付报告](M24-交付报告.md)。
+
 | # | 文档依据 | 代码现状（证据） | 影响 | 建议 |
 |---|---|---|---|---|
 | P0-01 | 系统设计 §7 端点清单（`POST /api/v1/units`）；F4.1 选题；US-3 | 31 个 API 中**无** `POST /units`；全仓 grep `INSERT INTO unit` 无匹配；单元行只由测试/种子脚本写入 | 新用户 `/unit` 永远是空态；M23 手册教的"点推进到下一步"没有对象可推 | 补建单元端点（含 topic_picker 三候选）或最小"手动建单元" |
@@ -46,7 +48,7 @@
 
 | # | 文档依据 | 代码现状（证据） | 影响 | 建议 |
 |---|---|---|---|---|
-| P1-01 | 系统设计 §7：42 个 `/api/v1` | 实测 31 个。缺失组：`units`（创建/sessions/production/degrade；设计中的 `transition` 以 `/units/{uid}/move` 落地，命名不同）、`roles/*`、`providers/*/chat`、验证判分组（restatement/boundary-answer/followup/self-score/confirm-score/force-close/critic/rubric）、`ledger/*`、`audit/{id}/undo`、`cost/*` | 设计中的"学习工作台"整体缺失，只剩只读页 + 状态推进 | 见 P0-01/02/03；其余按需补 |
+| P1-01 | 系统设计 §7：42 个 `/api/v1` | 实测 **36 个**（M24 前为 31；+5：units/production/attempts/close/roles call）。缺失组：`units`（sessions/degrade）、`roles/contracts`、`providers/*/chat`、验证判分组（restatement/boundary-answer/followup/self-score/confirm-score/force-close/critic/rubric）、`ledger/*`、`audit/{id}/undo`、`cost/*`（设计中的 `transition` 以 `/units/{uid}/move` 落地，命名不同） | 设计中的"学习工作台"仍不完整，但主链已可用 | 其余按需补 |
 | P1-02 | 冻结项 #7（日快照 7 + 月快照 12，RPO≤24h）；部署设计 C4 | 无调度器；实际为"手动导出 + 导出即轮转 + 启动即轮转 + 6h daemon 轮转 + CLI"。**没有"每日自动生成快照"** | RPO≤24h 无载体；用户不点导出就没有当天快照 | 在 `serve()` 增加每日快照任务，或把 RPO 改为"手动快照"并回写文档 |
 | P1-03 | F8.1（8 家，P0/MVP） | `GeminiAdapter.complete` 直接 `raise BizError("A040002")`；向导可填 Gemini、连通性测试也支持 gemini 分支 | 按向导配置 Gemini 的用户，第一次真实调用必然失败 | 要么实现 Gemini，要么在 UI 标"暂不支持" |
 | P1-04 | F9.1；`pricing.yaml` 由用户维护 | 只登记 3 个模型（gpt-4o-mini / deepseek-chat / claude-3-5-haiku）；其余 5 家 11 个模型 `cost=0.0` | qwen/GLM/Kimi/豆包/gpt-4o 用户的花费恒为 0，预算闸门形同虚设 | 补齐价格表；未知模型给"未登记价格"提示而非静默 0 |

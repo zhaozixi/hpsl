@@ -64,3 +64,28 @@ class RoleLLM:
     def complete(self, role, context: dict, *, stream: bool = False) -> Reply:
         messages = self.build_messages(role, context)
         return self.adapter.complete(messages, stream=stream)
+
+
+def call_role(
+    role,
+    context: dict,
+    *,
+    adapter,
+    session_id: str,
+    unit_id: Optional[str] = None,
+    prompts_dir: Optional[str | Path] = None,
+):
+    """角色调用的生产接线（P0）：组装 → 适配器 → 记账，返回 (Reply, CostEstimateVO)。
+
+    隔离纪律不变：上下文必须经 `assembler.assemble`（RoleLLM.build_system_prompt 内部完成），
+    `answer_machine_output` 永远不进入 messages。
+    记账经 `cost.record_call`（内部 `db.write` 写 llm_call，同事务审计）；
+    调用失败时异常向上抛（A040001/A040003/A040004），不会留下半条记账。
+    """
+    from .cost import record_call
+
+    llm = RoleLLM(adapter, prompts_dir=prompts_dir)
+    reply = llm.complete(role, context)
+    role_value = role.value if isinstance(role, Role) else str(role)
+    cost_vo = record_call(role_value, reply, session_id, unit_id)
+    return reply, cost_vo

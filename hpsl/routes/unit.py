@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -27,8 +28,9 @@ from fastapi.templating import Jinja2Templates
 from .. import db, projects as proj
 from ..engine import state as st
 from ..engine import claim_check as cc
+from ..engine import grading as gr
 from ..engine import ledger as lg
-from ..common.enums import UnitState
+from ..common.enums import AttemptKind, UnitState
 from ..common.errors import BizError
 from ..common.result import ok
 from .security import write_security, read_security
@@ -236,6 +238,160 @@ async def arbitrate_cc_api(req: Request, uid: str, cid: str):
             context={"unit": {"id": uid}, "cc": rows[0]},
         )
     return ok({"claim_id": cid, "ruling": ruling})
+
+
+# ---------------------------------------------------------------------------
+# P0-A 主链写入（建单元 / 产出 / 尝试 / 闭环）
+# 纪律：全部经 db.write；零 DDL；不新增错误码；状态推进仍只经 state.move。
+# ---------------------------------------------------------------------------
+def _get_unit(pid: str, uid: str) -> dict:
+    rows = db.query(pid, "SELECT * FROM unit WHERE id=?", (uid,))
+    if not rows:
+        raise BizError("A020001", msg=f"单元 {uid} 不存在")
+    return rows[0]
+
+
+def _as_score(value, field: str) -> Optional[float]:
+    """把 0~1 的分数（JSON 数字或表单字符串）归一为 float；空 → None。"""
+    if value is None or value == "":
+        return None
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        raise BizError("C400001", msg=f"{field} 须为 0~1 的数字")
+    if not (0.0 <= score <= 1.0):
+        raise BizError("C400001", msg=f"{field} 须在 [0,1] 区间")
+    return score
+
+
+@api_router.post("/units", dependencies=[Depends(write_security)])
+async def create_unit_api(req: Request):
+    """建单元（INIT）。P0-01：此前没有任何创建入口。"""
+    pid = _require_pid()
+    data = await _parse_body(req)
+    title = data.get("title")
+    if not isinstance(title, str) or not title.strip():
+        raise BizError("C400001", msg="title 必填（1~200 字符）")
+    title = title.strip()
+    if len(title) > 200:
+        raise BizError("C400001", msg="title 过长（≤200 字符）")
+    band = data.get("difficulty_band")
+    if band in (None, ""):
+        band = None
+    if band is not None and band not in ("稳妥", "拉伸", "回补"):
+        raise BizError("C400001", msg="difficulty_band 仅支持 稳妥/拉伸/回补")
+    uid = uuid.uuid4().hex
+    db.write(
+        pid,
+        "unit",
+        {
+            "id": uid,
+            "title": title,
+            "status": UnitState.INIT.value,
+            "difficulty_band": band,
+        },
+        "user",
+    )
+    return ok(
+        {
+            "id": uid,
+            "title": title,
+            "status": UnitState.INIT.value,
+            "difficulty_band": band,
+            "allowed_next": _allowed_next(UnitState.INIT.value),
+        }
+    )
+
+
+@api_router.post("/units/{uid}/production", dependencies=[Depends(write_security)])
+async def unit_production_api(req: Request, uid: str):
+    """提交单元产出（回归主线）。produced_at 由进入 VERIFY 时的 move 写入。"""
+    pid = _require_pid()
+    _get_unit(pid, uid)
+    data = await _parse_body(req)
+    production = data.get("production")
+    if not isinstance(production, str) or not production.strip():
+        raise BizError("C400001", msg="production 不能为空（写一句产出内容）")
+    if len(production) > 20000:
+        raise BizError("C400001", msg="production 过长（≤20000 字符）")
+    db.write(pid, "unit", {"id": uid, "production": production}, "user")
+    return ok({"unit_id": uid, "length": len(production)})
+
+
+@api_router.post("/units/{uid}/attempts", dependencies=[Depends(write_security)])
+async def create_attempt_api(req: Request, uid: str):
+    """记录一次尝试（重述 / 边界 / 追问 / 复测）及其自评、确认得分。"""
+    pid = _require_pid()
+    _get_unit(pid, uid)
+    data = await _parse_body(req)
+    kind = data.get("kind")
+    valid_kinds = [k.value for k in AttemptKind]
+    if kind not in valid_kinds:
+        raise BizError("C400001", msg=f"kind 仅支持 {'/'.join(valid_kinds)}")
+    self_score = _as_score(data.get("self_score"), "self_score")
+    confirmed_score = _as_score(data.get("confirmed_score"), "confirmed_score")
+    concept_id = data.get("concept_id") or None
+    if concept_id:
+        if not db.query(pid, "SELECT id FROM concept WHERE id=?", (concept_id,)):
+            raise BizError("C400001", msg="concept_id 不存在")
+    rubric = data.get("rubric")
+    if rubric is not None and not isinstance(rubric, dict):
+        raise BizError("C400001", msg="rubric 需为对象（评分要点）")
+    seconds = data.get("seconds")
+    if seconds is not None:
+        try:
+            seconds = int(seconds)
+        except (TypeError, ValueError):
+            raise BizError("C400001", msg="seconds 须为整数")
+    attempt_id = uuid.uuid4().hex
+    db.write(
+        pid,
+        "attempt",
+        {
+            "id": attempt_id,
+            "unit_id": uid,
+            "concept_id": concept_id,
+            "kind": kind,
+            "rubric": rubric,
+            "self_score": self_score,
+            "confirmed_score": confirmed_score,
+            "seconds": seconds,
+            "ts": db._now_utc(),
+        },
+        "user",
+    )
+    return ok({"attempt_id": attempt_id, "kind": kind})
+
+
+@api_router.post("/units/{uid}/close", dependencies=[Depends(write_security)])
+async def close_unit_api(req: Request, uid: str):
+    """闭环（JUDGE→INTEGRATE）。成功后自动入队延迟复测。"""
+    pid = _require_pid()
+    data = await _parse_body(req)
+    score = _as_score(data.get("confirmed_score"), "confirmed_score")
+    if score is None:
+        raise BizError("A050004", msg="确认得分缺失，不可闭环")
+    reason = data.get("close_reason")
+    if not isinstance(reason, str):
+        reason = None
+    same_source = data.get("same_source")
+    if same_source not in (True, False, None):
+        same_source = None
+    vo = gr.close_unit(
+        pid,
+        uid,
+        score,
+        force_close=bool(data.get("force_close")),
+        close_reason=reason,
+        is_keypoint=bool(data.get("is_keypoint")),
+        same_source=same_source,
+        explicit_confirm=bool(data.get("explicit_confirm")),
+    )
+    enqueued = gr.enqueue_unit_reviews(pid, uid)
+    payload = vo.to_dict()
+    payload["reviews_enqueued"] = len(enqueued)
+    payload["review_ids"] = enqueued
+    return ok(payload)
 
 
 # ---------------------------------------------------------------------------

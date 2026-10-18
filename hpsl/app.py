@@ -25,6 +25,7 @@ from . import config as _config
 from .common.result import fail
 from .common.errors import BizError
 from .routes import security, projects_routes
+from .routes import roles as roles_routes
 from .routes import governance as governance_routes
 from .routes import ledger as ledger_routes
 from .routes import review as review_routes
@@ -48,6 +49,7 @@ if FastAPI is not None:
 
     # 挂载路由：API（/api/v1）+ 页面（Jinja2 + HTMX）
     app.include_router(projects_routes.api_router)
+    app.include_router(roles_routes.api_router)
     app.include_router(governance_routes.api_router)
     app.include_router(review_routes.api_router)
     app.include_router(unit_routes.api_router)

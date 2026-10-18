@@ -35,6 +35,7 @@ from ..common.enums import UnitState
 from ..common.errors import BizError
 from ..projects import get_effective_config
 from . import claim_check as claim_check_mod
+from . import review_queue
 from . import state
 
 
@@ -202,6 +203,28 @@ def close_unit(
         actor="system",
     )
     return state.move(pid, uid, UnitState.JUDGE, UnitState.INTEGRATE, actor="system")
+
+
+def enqueue_unit_reviews(pid: str, uid: str, closed_at: Optional[str] = None) -> list[str]:
+    """单元闭环后为其涉及的概念入队延迟复测（跨单元队列，零 DDL）。
+
+    - 概念来源：本单元 `attempt.concept_id` 去重（作答时已关联的概念）。
+    - 无关联概念 → 返回空列表（不阻塞闭环；页面提示"本单元未关联概念，暂无复测"）。
+    - 幂等：`enqueue_reviews` 对已有活跃 review 行跳过，可重复调用。
+    """
+    rows = db.query(
+        pid,
+        "SELECT DISTINCT concept_id FROM attempt WHERE unit_id=? AND concept_id IS NOT NULL",
+        (uid,),
+    )
+    concept_ids = [r["concept_id"] for r in rows if r.get("concept_id")]
+    if not concept_ids:
+        return []
+    if closed_at is None:
+        # 以单元的闭环时间为基准（due = closed_at + 2d），而非入队瞬间
+        unit_rows = db.query(pid, "SELECT closed_at FROM unit WHERE id=?", (uid,))
+        closed_at = (unit_rows[0].get("closed_at") if unit_rows else None) or db._now_utc()
+    return review_queue.enqueue_reviews(pid, concept_ids, closed_at)
 
 
 # ---------------------------------------------------------------------------

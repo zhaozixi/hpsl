@@ -2,8 +2,16 @@
 
 from . import security
 from . import projects as projects_routes
+from . import roles as roles_routes
 from . import settings_keys as settings_keys_routes
 from . import wizard as wizard_routes
 from . import export as export_routes
 
-__all__ = ["security", "projects_routes", "settings_keys_routes", "wizard_routes", "export_routes"]
+__all__ = [
+    "security",
+    "projects_routes",
+    "roles_routes",
+    "settings_keys_routes",
+    "wizard_routes",
+    "export_routes",
+]

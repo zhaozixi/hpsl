@@ -212,3 +212,46 @@ def pricing(model_id: str) -> Optional[dict]:
 
 def build_adapter(model_id: str, *, key_resolver=None, base_url=None) -> ProviderAdapter:
     return REGISTRY.build_adapter(model_id, key_resolver=key_resolver, base_url=base_url)
+
+
+def pick_default_model(role: Optional[str] = None) -> str:
+    """选择角色的默认模型（P0 主链接线用，零配置可跑）。
+
+    优先级：
+    1. 环境变量 `HPSL_ROLE_MODEL_<ROLE>`（role 大写；role 为空时 `HPSL_DEFAULT_MODEL`）；
+    2. 首个「已配置密钥」厂商的第一个已注册模型；
+    3. 跳过 gemini（当前 `GeminiAdapter` 为占位，调用即 A040002）。
+
+    无可用密钥 → A040003（与 keystore 同一语义），错误文案指出下一步动作。
+    说明：F8.2「自动分配各角色」尚未实现，本函数即该能力的临时替代；不新增配置文件。
+    """
+    import os
+
+    from ..common.errors import BizError
+    from ..secrets import keystore
+
+    override = None
+    if role:
+        override = os.environ.get(f"HPSL_ROLE_MODEL_{str(role).upper()}")
+    override = override or os.environ.get("HPSL_DEFAULT_MODEL")
+    if override:
+        return override
+
+    # 密钥目录与 routes/settings_keys 保持一致：HPSL_HOME/secrets（不在源码包内）
+    from .. import config as _config
+
+    secrets_dir = _config.home() / "secrets"
+    REGISTRY._ensure()
+    for provider in REGISTRY.list_providers():
+        if REGISTRY.provider_kind(provider) == "gemini":
+            continue
+        status = keystore.key_status(provider, secrets_dir=secrets_dir)
+        if not status.get("has_key"):
+            continue
+        for cfg in REGISTRY.list_models():
+            if cfg.provider == provider:
+                return cfg.id
+    raise BizError(
+        "A040003",
+        msg="没有可用的模型密钥：请先在设置页填写任一厂商的 API 密钥（Gemini 当前为占位实现，暂不参与自动选择）",
+    )
