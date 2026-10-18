@@ -25,7 +25,7 @@ from ..common.errors import BizError
 from ..common.result import ok
 from ..engine.role_llm import call_role
 from ..models import registry
-from .security import write_security
+from .security import rate_limiter, write_security
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -133,6 +133,10 @@ async def role_call_api(req: Request, role: str):
             {"id": session_id, "unit_id": unit_id, "started_at": db._now_utc()},
             "user",
         )
+
+    # 五维限流的第 3 维：LLM 频次（默认 10 次/分钟/会话）
+    if not rate_limiter.allow("llm_freq", session_id):
+        raise BizError("C429001", msg="模型调用过于频繁（每会话 10 次/分钟），请稍后再试")
 
     reply, cost_vo = call_role(
         target, ctx, adapter=adapter, session_id=session_id, unit_id=unit_id

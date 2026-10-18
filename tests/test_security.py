@@ -1,6 +1,7 @@
 """安全基线断言（规格 AC4 / AC5 / AC6）。
 
-- AC4：Host 非白名单 → 400；写请求缺 Origin/Origin 非回环 → 403；CSRF 缺失/不符 → 403。
+- AC4：Host 非白名单 → 403 C403001（M25 起与安全设计 T-01 对齐）；
+  写请求缺 Origin/Origin 非回环 → 403；CSRF 缺失/不符 → 403。
 - AC5：safe_path 越界 → C400002（复用 M0 断言思路，并新增 pid 穿越防护）。
 - AC6：五维限流越限 → 429（用 tight_ratelimit 收敛阈值验证机制）。
 """
@@ -15,10 +16,17 @@ from hpsl.routes import security
 # ---------------------------------------------------------------------------
 # AC4：Host / Origin / CSRF
 # ---------------------------------------------------------------------------
-def test_host_not_whitelisted_returns_400(client):
+def test_host_not_whitelisted_returns_403(client):
     r = client.get("/", headers={"Host": "evil.example.com"})
-    assert r.status_code == 400
-    assert r.json()["code"] == "C400003"
+    assert r.status_code == 403
+    assert r.json()["code"] == "C403001"
+
+
+def test_host_prefix_not_bypassed(client):
+    # M25：`127.` 前缀不再放行，必须精确匹配
+    r = client.get("/", headers={"Host": "127.0.0.1.attacker.com"})
+    assert r.status_code == 403
+    assert r.json()["code"] == "C403001"
 
 
 def test_write_missing_origin_returns_403(client, csrf_headers):
@@ -109,7 +117,11 @@ def test_security_helpers_unit():
     assert security.check_host("127.0.0.1:8765") is True
     assert security.check_host("localhost:8765") is True
     assert security.check_host("evil.com") is False
+    assert security.check_host("127.0.0.1.attacker.com") is False
+    assert security.check_host("127.0.0.1:9999") is False
     assert security.check_origin("http://127.0.0.1:8765") is True
+    assert security.check_origin("http://127.0.0.1:9999") is False
+    assert security.check_origin("http://0.0.0.1:8765") is False
     assert security.check_origin("http://attacker.com") is False
     assert security.check_origin("") is False
     tok = security.new_csrf_token()

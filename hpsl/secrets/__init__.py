@@ -9,6 +9,7 @@ from .keystore import (
     derive_fernet_key,
     get_api_key,
     key_status,
+    lock_state,
     set_api_key,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "derive_fernet_key",
     "get_api_key",
     "key_status",
+    "lock_state",
     "set_api_key",
 ]

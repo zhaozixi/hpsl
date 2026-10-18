@@ -29,22 +29,14 @@ api_router = APIRouter(prefix="/api/v1")
 
 # 密钥存储目录：HPSL_HOME/secrets（D-M11-1，避免污染源码包目录）。
 # 注意：HPSL_HOME 在测试中被 autouse fixture 按测试重写为临时目录，故**不可**在模块
-# 导入期缓存路径/后端；必须按请求动态解析，并按路径缓存后端（避免每次请求重复告警）。
-_BACKENDS: dict[str, FileBackend] = {}
-
-
+# 导入期缓存路径/后端；必须按请求动态解析。M25 起不再缓存后端实例，避免
+# `HPSL_MASTER_PASSPHRASE` 在进程内变更后仍用旧口令。
 def _secrets_dir() -> Path:
     return cfg.home() / "secrets"
 
 
 def _backend() -> FileBackend:
-    d = _secrets_dir()
-    key = str(d)
-    b = _BACKENDS.get(key)
-    if b is None:
-        b = FileBackend(d)
-        _BACKENDS[key] = b
-    return b
+    return FileBackend(_secrets_dir())
 
 
 async def _parse_body(req: Request) -> dict:
@@ -76,8 +68,16 @@ def _validate_provider(provider: str) -> None:
 # ---------------------------------------------------------------------------
 @api_router.get("/settings/keys", dependencies=[Depends(read_security)])
 def list_keys_api():
+    state = secrets_mod.lock_state(_secrets_dir())
     items = [secrets_mod.key_status(p, backend=_backend()) for p in registry.list_providers()]
-    return ok({"secrets_dir": str(_secrets_dir()), "providers": items})
+    return ok(
+        {
+            "secrets_dir": str(_secrets_dir()),
+            "locked": state["locked"],
+            "lock_reason": state["reason"],
+            "providers": items,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------

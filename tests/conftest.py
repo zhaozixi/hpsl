@@ -16,6 +16,9 @@ os.environ["HPSL_ALLOWED_HOSTS"] = "127.0.0.1,localhost,testserver"
 os.environ["HPSL_RATE_LIMITS"] = (
     "process=100000,route=100000,llm_freq=100000,sse_concurrency=100000,write_freq=100000"
 )
+# M25：文件保险库需要口令（默认链路不再允许明文降级）。测试用固定口令；
+# 验证"锁定"行为的用例会 monkeypatch.delenv 临时移除。
+os.environ.setdefault("HPSL_MASTER_PASSPHRASE", "hpsl-test-passphrase")
 
 import pytest
 from fastapi.testclient import TestClient

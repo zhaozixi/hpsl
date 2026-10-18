@@ -33,7 +33,10 @@ DEFAULT_RATE_LIMITS = {
     "sse_concurrency": 2,
     "write_freq": 5,
 }
-RATE_LIMIT_WINDOW = 1.0  # 滑动窗口秒数
+RATE_LIMIT_WINDOW = 1.0  # 滑动窗口秒数（未单独配置的维度使用）
+
+# 维度专属窗口：LLM 频次按「每分钟」计（与安全设计 T-17 的 10 次/分/会话一致）
+DEFAULT_RATE_WINDOWS = {"llm_freq": 60.0}
 
 
 def home() -> Path:
@@ -87,6 +90,21 @@ def rate_limits() -> dict[str, int]:
                 except ValueError:
                     pass
     return limits
+
+
+def rate_windows() -> dict[str, float]:
+    """维度专属滑动窗口（秒）；可被 HPSL_RATE_WINDOWS（逗号 k=v）覆盖，主要供测试。"""
+    windows = dict(DEFAULT_RATE_WINDOWS)
+    raw = os.environ.get("HPSL_RATE_WINDOWS")
+    if raw:
+        for item in raw.split(","):
+            if "=" in item:
+                k, v = item.split("=", 1)
+                try:
+                    windows[k.strip()] = float(v.strip())
+                except ValueError:
+                    pass
+    return windows
 
 
 def default_config() -> ConfigVO:

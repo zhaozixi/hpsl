@@ -37,15 +37,21 @@ python -m venv .venv
 .venv/Scripts/activate        # Windows
 pip install -e ".[test]"
 
+# 必需：设置密钥库口令（不落盘；丢失则已存 API key 不可恢复）
+export HPSL_MASTER_PASSPHRASE="换成一个足够长的口令"      # bash
+# $env:HPSL_MASTER_PASSPHRASE = "..."                     # PowerShell
+
 # 启动本地服务（默认 127.0.0.1:8765；端口可经 --port 或环境变量 HPSL_PORT 覆盖）
 hpsl serve
 # 浏览器打开 http://127.0.0.1:8765
 
-# 运行全量测试（M0–M23，约 336 例，含零 DDL 守护）
+# 运行全量测试（M0–M25，约 385 例，含零 DDL 守护）
 pytest -q
 ```
 
-测试默认把 `HPSL_HOME` 指向临时目录（见 `conftest.py`），不会污染真实 `~/.hpsl`。
+> 若系统安装了 `keyring`（macOS/Windows 凭据管理器），密钥会优先存入系统钥匙环，
+> 此时可不设 `HPSL_MASTER_PASSPHRASE`；否则文件保险库要求口令，缺失会明确报错（A040003）。
+> `/docs`、`/redoc`、`/openapi.json` 已关闭（安全设计 §4.2.2）。
 
 ## 关键约束（实现期不可变更）
 
@@ -53,7 +59,8 @@ pytest -q
 - 16 个库对象：14 张业务表 + `audit_log`（共 15 张表）+ `chunk_fts` FTS5 虚表；`user_version=1`，迁移幂等。
 - `audit_log` **不在写白名单**，业务代码不得直写；`undo` 撤销动作本身也留痕。
 - 时间字段统一 ISO-8601 UTC 文本；JSON 字段 `json.dumps(ensure_ascii=False)` 存 TEXT。
-- 安全：本地单机单用户、回环监听；Host 白名单 + 写请求 Origin/CSRF 双提交 + 五维限流；无账号体系、无多租户。
+- 安全：本地单机单用户、回环监听；Host/Origin **精确匹配**（含端口）+ 写请求 CSRF 双提交 + 五维限流（process/route/llm_freq/sse_concurrency/write_freq）；无账号体系、无多租户；`/docs` 等文档端点关闭。
+- 密钥：keyring 优先；否则 `HPSL_MASTER_PASSPHRASE` + Argon2id(64MiB/3/4) + **每文件随机 salt**，无口令即拒绝（不降级明文），口令不落盘、不入日志/导出。
 
 ## 当前能力（M1–M23）
 

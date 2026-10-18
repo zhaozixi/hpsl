@@ -1,14 +1,14 @@
 """安全基线（冻结项 #5，本地等效实现）：Host 白名单 + 写请求 Origin/CSRF 双提交 + safe_path + 五维限流。
 
-- Host 白名单：中间件校验 `Host` 头，非白名单 → 400 C400003（规格 §5）。
+- Host 白名单：中间件校验 `Host` 头（精确匹配，含端口），非白名单 → 403 C403001（M25 起与
+  《安全设计》T-01 对齐；旧 C400003 保留注册但不再使用）。
 - Origin 校验（写）：解析 scheme://netloc 须为回环，否则 → 403 C403001。
 - CSRF 双提交：GET 经中间件下发可读 cookie；写请求须带 `X-CSRF-Token` 且等于 cookie，否则 → 403 C403001。
 - safe_path：路由层凡涉及 pid/路径访问先解析并校验前缀，越界 → C400002（复用 M0 db.safe_path）。
 - 五维限流：进程内滑动窗口（进程/路由/LLM频次/SSE并发/写频次），越限 → 429 C429001。
 
-错误码说明：M1 §2.1 提及 A020001/A020002/A020003，但基线 §3.5.1 已将这些 A02xx 码分配给 M2 状态机，
-且 C403001 已涵盖 Host/Origin/CSRF 来源校验。为不破坏锁定基线，本实现沿用 C 类客户端错误码：
-C400003（Host 不在白名单）、C403001（来源不被允许）、C429001（限流）。该冲突已上报主理人裁决。
+错误码说明：M1 期曾用 C400003（Host 400）；M25 依《安全设计》T-01 统一为 403 C403001，
+C400003 仍在注册表中（向后兼容，历史客户端可识别）。
 """
 
 from __future__ import annotations
@@ -30,34 +30,58 @@ from ..common.result import fail
 CSRF_COOKIE = "hpsl_csrf"
 X_CSRF_HEADER = "x-csrf-token"
 
-_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]", "0.0.0.1"}
+# ---------------------------------------------------------------------------
+# Host / Origin 白名单（冻结项 #5；M25 起改为精确匹配 + fail-fast）
+# ---------------------------------------------------------------------------
+def _allowed_host_set() -> set[str]:
+    """允许的 Host 值（含显式端口）。空白名单 → 空集（全部拒绝，不 fail-open）。"""
+    port = config.service_port()
+    out: set[str] = set()
+    for raw in config.allowed_hosts():
+        host = (raw or "").strip().lower()
+        if not host:
+            continue
+        out.add(host)
+        if ":" not in host:  # 裸主机名补「host:port」形态
+            out.add(f"{host}:{port}")
+    return out
 
 
-# ---------------------------------------------------------------------------
-# Host 白名单（冻结项 #5）
-# ---------------------------------------------------------------------------
+def _allowed_origin_set() -> set[str]:
+    """允许的 Origin 值（http/https × 带/不带端口）。"""
+    port = config.service_port()
+    out: set[str] = set()
+    for raw in config.allowed_hosts():
+        host = (raw or "").strip().lower()
+        if not host:
+            continue
+        out.add(f"http://{host}")
+        out.add(f"https://{host}")
+        if ":" not in host:
+            out.add(f"http://{host}:{port}")
+            out.add(f"https://{host}:{port}")
+    return out
+
+
 def check_host(host: str) -> bool:
-    als = {h.lower() for h in config.allowed_hosts()}
-    if not als:
-        return True  # 空白名单视为全部允许（不应发生，config 默认非空）
-    host = (host or "").split(":")[0].lower()
-    return host in als or host.startswith("127.")
+    """精确匹配 Host（含端口）；空白名单一律拒绝（防 DNS 重绑定）。"""
+    allowed = _allowed_host_set()
+    if not allowed:
+        return False
+    return (host or "").strip().lower() in allowed
 
 
-# ---------------------------------------------------------------------------
-# Origin 校验（写请求，回环）
-# ---------------------------------------------------------------------------
 def check_origin(origin: str) -> bool:
+    """写请求 Origin 精确匹配（scheme + 主机 + 端口），不再使用 `127.` 前缀放行。"""
     if not origin:
         return False
     parts = urlsplit(origin)
     if parts.scheme not in ("http", "https"):
         return False
-    host = parts.hostname or ""
-    host = host.lower()
-    if host in _LOOPBACK_HOSTS or host.startswith("127.") or host == "localhost":
-        return True
-    return False
+    netloc = (parts.netloc or "").lower()
+    if not netloc:
+        return False
+    return f"{parts.scheme}://{netloc}" in _allowed_origin_set()
 
 
 # ---------------------------------------------------------------------------
@@ -82,30 +106,50 @@ def check_csrf(request) -> bool:
 # 五维限流：进程内滑动窗口
 # ---------------------------------------------------------------------------
 class SlidingWindowLimiter:
-    """滑动窗口限流器：allow(dimension, key) 在窗口内计数，越限返回 False。"""
+    """滑动窗口限流器：allow(dimension, key) 在窗口内计数，越限返回 False。
 
-    def __init__(self, limits: dict, window: float = 1.0):
+    窗口可按维度覆盖（`windows`），例如 LLM 频次按 60s 计，其余维度按 1s 计。
+    """
+
+    def __init__(
+        self,
+        limits: dict,
+        window: float = 1.0,
+        windows: dict | None = None,
+    ):
         self.limits = dict(limits)
         self.window = window
+        self.windows = dict(windows or {})
         self._lock = threading.Lock()
         self._buckets: dict[str, list[float]] = {}
 
-    def configure(self, limits: dict, window: float | None = None) -> None:
+    def configure(
+        self,
+        limits: dict,
+        window: float | None = None,
+        windows: dict | None = None,
+    ) -> None:
         with self._lock:
             self.limits = dict(limits)
             if window is not None:
                 self.window = window
+            if windows is not None:
+                self.windows = dict(windows)
             self._buckets.clear()
+
+    def _window_for(self, dimension: str) -> float:
+        return float(self.windows.get(dimension, self.window))
 
     def allow(self, dimension: str, key: str, now: float | None = None) -> bool:
         limit = self.limits.get(dimension, 10**9)
         if limit <= 0:
             return False
+        window = self._window_for(dimension)
         now = time.monotonic() if now is None else now
         bk = f"{dimension}:{key}"
         with self._lock:
             times = self._buckets.setdefault(bk, [])
-            cutoff = now - self.window
+            cutoff = now - window
             i = 0
             while i < len(times) and times[i] <= cutoff:
                 i += 1
@@ -121,8 +165,58 @@ class SlidingWindowLimiter:
             self._buckets.clear()
 
 
+class ConcurrencyLimiter:
+    """并发闸（SSE 用）：`try_acquire()` 成功即占用一个槽，`release()` 归还。
+
+    与滑动窗口不同，这是"同时进行中的数量"而非"单位时间次数"。
+    """
+
+    def __init__(self, limit: int):
+        self.limit = int(limit)
+        self._active = 0
+        self._lock = threading.Lock()
+
+    def configure(self, limit: int) -> None:
+        with self._lock:
+            self.limit = int(limit)
+            self._active = min(self._active, self.limit)
+
+    def try_acquire(self) -> bool:
+        with self._lock:
+            if self._active >= self.limit:
+                return False
+            self._active += 1
+            return True
+
+    def release(self) -> None:
+        with self._lock:
+            if self._active > 0:
+                self._active -= 1
+
+    def active(self) -> int:
+        with self._lock:
+            return self._active
+
+
 # 单例（进程内）
-rate_limiter = SlidingWindowLimiter(config.rate_limits(), config.RATE_LIMIT_WINDOW)
+rate_limiter = SlidingWindowLimiter(
+    config.rate_limits(), config.RATE_LIMIT_WINDOW, config.rate_windows()
+)
+sse_limiter = ConcurrencyLimiter(int(config.rate_limits().get("sse_concurrency", 2)))
+
+
+def hold_sse_slot():
+    """SSE 端点依赖：占用一个并发槽，响应/断开后归还。
+
+    当前 v0 尚无 SSE 端点（设计预留），此依赖供未来 `Depends(hold_sse_slot)` 使用；
+    越限 → C429001（与五维限流同一错误码）。
+    """
+    if not sse_limiter.try_acquire():
+        raise BizError("C429001", msg="同时进行的流式请求过多，请稍后再试")
+    try:
+        yield
+    finally:
+        sse_limiter.release()
 
 
 # ---------------------------------------------------------------------------
@@ -143,9 +237,9 @@ class TraceIdMiddleware(BaseHTTPMiddleware):
 # ---------------------------------------------------------------------------
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        # Host 白名单（所有请求）
+        # Host 白名单（所有请求）；M25 起与文档一致返回 403/C403001
         if not check_host(request.headers.get("host", "")):
-            return JSONResponse(status_code=400, content=fail("C400003").to_dict())
+            return JSONResponse(status_code=403, content=fail("C403001").to_dict())
         response = await call_next(request)
         # CSRF cookie 下发（GET）：无则种，有则回显；httponly=False 供 JS 双提交
         if request.method == "GET":

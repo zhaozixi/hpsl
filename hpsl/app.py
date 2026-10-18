@@ -39,7 +39,14 @@ from .routes import export as export_routes
 from .routes import stats as stats_routes
 
 if FastAPI is not None:
-    app = FastAPI(title="hpsl", version="0.0.0")
+    # 生产形态关闭交互文档与 OpenAPI（安全设计 §4.2.2 / T-15）；无对外 API 消费方
+    app = FastAPI(
+        title="hpsl",
+        version="0.0.0",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
 
     # 中间件顺序（Starlette 语义：最后添加者最外层）：安全中间件在内，traceId 中间件最外层包裹。
     # traceId 最外层 → 请求最先经它生成/透传 trace_id，安全层拒绝（如 Host 非白名单）的响应也会回写
