@@ -29,19 +29,19 @@
 
 ---
 
-## 2. 工程债（建议下一批）
+## 2. 工程债（M31 后）
 
-| # | 事项 | 说明 | 预估 |
-|---|---|---|---|
-| E-01 | M12 / M22 专项测试 | UI token 体系、8 厂商 `kind` 路由与 `models.yaml` 解析无专项文件 | 0.5 人日 |
-| E-02 | `serve()` / WAL checkpoint / FTS 边界 | 目前 `serve()` 仅被 CLI 测试间接覆盖；FTS 特殊字符、超长查询未测 | 0.5 人日 |
-| E-03 | 前端行为测试 | 当前多为 HTML 字符串断言；可引入轻量浏览器测试（或至少 JS 语法 + 关键 DOM 结构） | 1 人日 |
-| E-04 | 环境与依赖 | `.venv` 已腐化；用 `requirements.txt` 重建并跑 `pipx install .` 实测 | 0.3 人日 |
-| E-05 | 知识库页面化 | 目前仅 API：索引目录、检索结果页（"未检索到"提示） | 0.5 人日 |
-| E-06 | 衰减页面化 | `/concepts/decay` 结果未进卡片/概念图界面 | 0.3 人日 |
-| E-07 | 周盘点增强 | 目前只改状态；可加"分配到下周/标记补前置" | 0.3 人日 |
-| E-08 | 真实 keyring / Anthropic key | keyring 仅 fake；Anthropic 流式无真实联调 | 视凭据 |
-| E-09 | 文档一致性 | REF-2 仍有少量历史行描述旧状态；delivery 基线按 CHG 流程维护 | 0.3 人日 |
+| # | 事项 | 状态 |
+|---|---|---|
+| E-01 | M12 / M22 专项测试 | ✅ 已完成（M31：token/模板继承 + 厂商矩阵/工厂/异构） |
+| E-02 | `serve()` / WAL checkpoint / FTS 边界 | ✅ 部分完成（M31：checkpoint/close_all/检索边界；`serve()` 仍靠 CLI 间接覆盖） |
+| E-03 | 前端行为测试 | ◐ 仅 `node --check` 语法校验；无 DOM/交互执行 |
+| E-04 | 环境与依赖 | ❌ 受阻：vendor python 无法作为 venv base（103），`pipx install .` 未实测 |
+| E-05 | 知识库页面 | ✅ 已完成（M31：`/knowledge` 挂载/检索/删除 + 导航） |
+| E-06 | 衰减页面化 | ✅ 已完成（M31：卡片页显示衰减后状态与天数） |
+| E-07 | 周盘点增强 | 未做（分配下周/补前置） |
+| E-08 | 真实 keyring / Anthropic key | 仅 fake/注入验证 |
+| E-09 | 文档一致性 | REF-2 保留历史描述行；delivery 按 CHG 维护 |
 
 ---
 

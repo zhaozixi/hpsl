@@ -121,10 +121,19 @@ def cards_page(req: Request):
         "LEFT JOIN concept ON card.concept_id = concept.id ORDER BY card.id ASC",
     )
     concepts = db.query(pid, "SELECT id,name FROM concept ORDER BY name COLLATE NOCASE ASC")
+    # P2-06：衰减后的"当前状态"（只读计算，不改写库内 verify_status）
+    from ..engine.decay import decayed_concepts
+
+    decay = {d["id"]: d for d in decayed_concepts(pid)}
     return _TEMPLATES.TemplateResponse(
         request=req,
         name="cards.html",
-        context={"project": active.to_dict(), "cards": cards, "concepts": concepts},
+        context={
+            "project": active.to_dict(),
+            "cards": cards,
+            "concepts": concepts,
+            "decay": decay,
+        },
     )
 
 

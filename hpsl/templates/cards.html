@@ -54,12 +54,16 @@
 
 <section>
   <h2>卡片列表（{{ cards|length }}）</h2>
+  <p class="text-muted">「当前状态」是按最近验证时间算出的衰减结果：刚验证过=已验证，隔几天=待验证，太久=未验证（只读展示，不写库）。</p>
   {% if cards %}
     <ul id="card-list" class="card list-clean">
     {% for c in cards %}
+      {% set d = decay.get(c.concept_id) if decay is defined and decay else none %}
       <li id="card-{{ c.id }}">
         <b>{{ c.my_words }}</b>
-        <small>· 概念：{{ c.concept_name or c.concept_id }} · 状态：{{ c.verify_status }}</small>
+        <small>· 概念：{{ c.concept_name or c.concept_id }} · 状态：{{ c.verify_status }}
+          {% if d %} · 当前状态（衰减后）：{{ d.effective_status }}（{{ d.days }} 天）{% endif %}
+        </small>
       </li>
     {% endfor %}
     </ul>

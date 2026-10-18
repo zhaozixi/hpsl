@@ -13,7 +13,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 
 from .. import projects as proj
 from ..common.errors import BizError
@@ -22,6 +26,14 @@ from ..engine import retrieval
 from .security import read_security, write_security
 
 api_router = APIRouter(prefix="/api/v1")
+page_router = APIRouter()
+
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+_TEMPLATES = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+
+def _is_htmx(req: Request) -> bool:
+    return req.headers.get("hx-request") is not None
 
 
 def _require_pid() -> str:
@@ -56,7 +68,39 @@ async def create_source_api(req: Request):
     path = body.get("path")
     if not isinstance(path, str) or not path.strip():
         raise BizError("C400001", msg="path 不能为空")
-    return ok(retrieval.index_source(_require_pid(), path))
+    result = retrieval.index_source(_require_pid(), path)
+    if _is_htmx(req):
+        return HTMLResponse(
+            f"<p class='ok'>已索引 {result.get('files', 0)} 个文件、{result.get('chunks', 0)} 个片段</p>",
+            headers={"HX-Refresh": "true"},
+        )
+    return ok(result)
+
+
+@page_router.get("/knowledge", dependencies=[Depends(read_security)])
+def knowledge_page(req: Request, q: str = ""):
+    """知识库页：挂载目录、来源列表、检索结果（无命中显示「未检索到」）。"""
+    active = proj.active_project()
+    if active is None:
+        return _TEMPLATES.TemplateResponse(
+            request=req,
+            name="knowledge.html",
+            context={"error": "尚未选择项目，请先在首页选择或新建项目"},
+        )
+    pid = active.id
+    sources = retrieval.list_sources(pid)
+    query = (q or "").strip()
+    results = retrieval.search(pid, query, limit=10) if query else []
+    return _TEMPLATES.TemplateResponse(
+        request=req,
+        name="knowledge.html",
+        context={
+            "project": active.to_dict(),
+            "sources": sources,
+            "q": query,
+            "results": results,
+        },
+    )
 
 
 @api_router.get("/sources", dependencies=[Depends(read_security)])
@@ -66,11 +110,16 @@ def list_sources_api():
 
 
 @api_router.delete("/sources/{sid}", dependencies=[Depends(write_security)])
-def delete_source_api(sid: str):
+def delete_source_api(sid: str, req: Request):
     """删除知识库来源及其 FTS 索引（source 行 + chunk_fts 行，同事务留痕）。"""
     if not sid or not sid.strip():
         raise BizError("C400001", msg="source_id 不能为空")
-    return ok(retrieval.delete_source(_require_pid(), sid))
+    result = retrieval.delete_source(_require_pid(), sid)
+    if _is_htmx(req):
+        return HTMLResponse(
+            "<p class='ok'>已删除该来源</p>", headers={"HX-Refresh": "true"}
+        )
+    return ok(result)
 
 
 @api_router.get("/search", dependencies=[Depends(read_security)])

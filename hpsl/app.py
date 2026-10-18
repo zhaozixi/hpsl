@@ -93,6 +93,7 @@ if FastAPI is not None:
     app.include_router(export_routes.page_router)
     app.include_router(stats_routes.page_router)
     app.include_router(insight_routes.page_router)
+    app.include_router(retrieval_routes.page_router)
 
     # 静态资源（HTMX / app.js / app.css）；目录不存在时跳过挂载，避免无前端时启动失败
     _static_dir = Path(__file__).resolve().parent / "static"

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner %}
+{% block title %}HPSL · 知识库{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="notice">{{ error }}</div>
+  <p><a href="/">返回首页选择或新建项目</a></p>
+{% else %}
+
+<h1>知识库 · {{ project.name }}</h1>
+<p><small>目标：{{ project.goal }}</small></p>
+
+{{ help_banner("知识库：把你自己的资料接进来",
+   "挂载一个本地文件夹（只读），系统会把 .md / .txt 建索引。之后提问可以检索到原文；检索不到时会明确显示「未检索到」，不会编造。") }}
+
+<section>
+  <h2>挂载本地目录</h2>
+  <form hx-post="/api/v1/sources" hx-target="#index-result" hx-swap="innerHTML">
+    <p>
+      <label>文件夹绝对路径<br>
+        <input class="input" type="text" name="path" required
+               placeholder="例：D:\notes\python"></label>
+    </p>
+    <p><button class="btn btn-primary" type="submit">建索引</button></p>
+  </form>
+  <div id="index-result"></div>
+</section>
+
+<section>
+  <h2>已挂载来源（{{ sources|length }}）</h2>
+  {% if sources %}
+  <ul id="source-list" class="card list-clean">
+    {% for s in sources %}
+    <li id="source-{{ s.id }}">
+      {{ s.path }}
+      <small>· {{ s.kind }} · 片段 {{ s.chunks }} · 加入于 {{ s.added_at }}</small>
+      <button type="button" class="btn btn-sm"
+              hx-delete="/api/v1/sources/{{ s.id }}"
+              hx-target="#index-result" hx-swap="innerHTML"
+              hx-confirm="删除该来源及其索引？">删除</button>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="ok">还没有挂载来源。先在上方填一个本地文件夹。</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>检索</h2>
+  <form method="get" action="/knowledge">
+    <p>
+      <label>关键词<br>
+        <input class="input" type="text" name="q" value="{{ q }}"
+               placeholder="例：groupby 索引对齐"></label>
+    </p>
+    <p><button class="btn" type="submit">检索</button></p>
+  </form>
+
+  {% if q %}
+    {% if results %}
+    <p class="ok">命中 {{ results|length }} 条。</p>
+    <ul class="list-clean">
+      {% for r in results %}
+      <li class="card">
+        <p><small>{{ r.page }}{% if r.score %} · 相关度 {{ "%.2f"|format(r.score) }}{% endif %}</small></p>
+        <pre class="pre-wrap">{{ r.text }}</pre>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="notice">未检索到：「{{ q }}」</p>
+    {% endif %}
+  {% endif %}
+</section>
+
+<p><a href="/">返回首页</a></p>
+{% endif %}
+{% endblock %}
