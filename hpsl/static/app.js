@@ -60,3 +60,30 @@
   if (document.readyState !== 'loading') bind();
 })();
 
+
+// 统一错误提示（M24）：BizError 以 JSON + 4xx 返回，HTMX 默认不 swap 4xx，
+// 这里兜底成 toast，避免「点了没反应」。
+(function () {
+  var box = null, timer = null;
+  function toast(text) {
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'toast';
+      box.setAttribute('role', 'alert');
+      document.body.appendChild(box);
+    }
+    box.textContent = text;
+    box.classList.add('show');
+    clearTimeout(timer);
+    timer = setTimeout(function () { box.classList.remove('show'); }, 5000);
+  }
+  function messageOf(xhr) {
+    try {
+      var d = JSON.parse(xhr.responseText);
+      if (d && d.msg) return d.msg + (d.code ? '（' + d.code + '）' : '');
+    } catch (e) {}
+    return '请求失败（HTTP ' + ((xhr && xhr.status) || 0) + '）';
+  }
+  document.addEventListener('htmx:responseError', function (evt) { toast(messageOf(evt.detail.xhr)); });
+  document.addEventListener('htmx:sendError', function () { toast('网络不可达，请检查本地服务是否在运行'); });
+})();

@@ -1,18 +1,21 @@
 {% from "macros.html" import cost_badge %}
-<div id="quota-modal-{{ session_id }}" class="modal">
+<div id="quota-modal-{{ session_id }}">
   {% if confirmed %}
-  <div class="modal-card">
+  <div class="card">
     <p class="ok">已确认继续，本会话预算状态：{{ cost_badge(cost.status) }}（累计 ${{ cost.cumulative_usd }} / 上限 ${{ cost.budget_cap_usd }}）</p>
+    <p><a href="/budget">返回预算页</a></p>
   </div>
   {% else %}
-  <div class="modal-card">
-    <h3>预算超限待确认</h3>
-    <p>这次学习快到本月花费上限了，确认后继续。</p>
-    <p><small>会话 {{ session_id }} · 累计 ${{ cost.cumulative_usd }} / 上限 ${{ cost.budget_cap_usd }}</small></p>
-    <form hx-post="/api/v1/budget/confirm" hx-target="#quota-modal-{{ session_id }}" hx-swap="outerHTML">
-      <input type="hidden" name="session_id" value="{{ session_id }}">
-      <button type="submit" class="btn btn-primary">确认继续</button>
-    </form>
+  <div class="modal">
+    <div class="modal-card">
+      <h3>预算超限待确认</h3>
+      <p>这次学习快到本月花费上限了，确认后继续。</p>
+      <p><small>会话 {{ session_id }} · 累计 ${{ cost.cumulative_usd }} / 上限 ${{ cost.budget_cap_usd }}</small></p>
+      <form hx-post="/api/v1/budget/confirm" hx-target="#quota-modal-{{ session_id }}" hx-swap="outerHTML">
+        <input type="hidden" name="session_id" value="{{ session_id }}">
+        <button type="submit" class="btn btn-primary">确认继续</button>
+      </form>
+    </div>
   </div>
   {% endif %}
 </div>

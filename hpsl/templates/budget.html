@@ -17,8 +17,10 @@
 <section>
   <h2>会话预算状态（{{ rows|length }}）</h2>
   {% if rows %}
+  <div class="table-wrap">
   <table id="budget-table" class="table">
-    <tr><th>会话</th><th>累计(USD)</th><th>上限</th><th>状态</th><th>确认次数</th></tr>
+    <thead><tr><th>会话</th><th>累计(USD)</th><th>上限</th><th>状态</th><th>确认次数</th></tr></thead>
+    <tbody>
     {% for r in rows %}
     <tr id="budget-{{ r.session.id }}">
       <td>{{ r.session.id }}</td>
@@ -28,7 +30,9 @@
       <td>{{ r.cost.confirmations }}</td>
     </tr>
     {% endfor %}
+    </tbody>
   </table>
+  </div>
   {% else %}
   <p class="ok">暂无会话记录。</p>
   {% endif %}

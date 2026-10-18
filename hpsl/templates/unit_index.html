@@ -15,6 +15,28 @@
    "系统会把一个大目标，拆成许多小单元，一步步带你学、练、考。点单元名进入详情；「状态」告诉你它进行到哪一步了。") }}
 
 <section>
+  <h2>新建单元</h2>
+  <form hx-post="/api/v1/units" hx-target="#create-result" hx-swap="innerHTML">
+    <p>
+      <label>单元标题<br>
+        <input class="input" type="text" name="title" required maxlength="200"
+               placeholder="例：用 pandas 读销售 CSV 并按地区汇总"></label>
+    </p>
+    <p>
+      <label>难度档（可留空）<br>
+        <select class="select" name="difficulty_band">
+          <option value="">未指定</option>
+          <option value="稳妥">稳妥</option>
+          <option value="拉伸">拉伸</option>
+          <option value="回补">回补</option>
+        </select></label>
+    </p>
+    <p><button class="btn btn-primary" type="submit">创建单元</button></p>
+  </form>
+  <div id="create-result"></div>
+</section>
+
+<section>
   <h2>单元列表（{{ units|length }}）</h2>
   {% if units %}
     <ul id="unit-list" class="card list-clean">
@@ -22,13 +44,13 @@
       <li id="unit-{{ u.id }}">
         <a href="/unit/{{ u.id }}">{{ u.title }}</a>
         · 状态：{{ state_badge(u.status) }}
-        · 强制闭环：{{ u.forced_close }}
+        · 强制闭环：{% if u.forced_close %}是（未走完流程）{% else %}否{% endif %}
         {% if u.closed_at %}· 闭环于：{{ u.closed_at }}{% endif %}
       </li>
     {% endfor %}
     </ul>
   {% else %}
-    <p class="ok">暂无单元，单元由学习会话流程产生。</p>
+    <p class="ok">暂无单元。点上方「创建单元」，先立一个最小目标。</p>
   {% endif %}
 </section>
 

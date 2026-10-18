@@ -12,10 +12,12 @@ A040001 / A040003 / C400001）；engine 仍保持 headless。
 
 from __future__ import annotations
 
+import html as _html
 import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Request, Depends
+from fastapi.responses import HTMLResponse
 
 from .. import db, projects as proj
 from ..common.enums import Role
@@ -139,6 +141,15 @@ async def role_call_api(req: Request, role: str):
         provider = registry.get_model(reply.model).provider
     except KeyError:
         provider = "unknown"
+    if req.headers.get("hx-request") is not None:
+        return HTMLResponse(
+            f'<div class="card"><p><strong>{_html.escape(target.value)}</strong> · '
+            f"{_html.escape(provider)}/{_html.escape(reply.model)}</p>"
+            f'<pre class="pre-wrap">{_html.escape(reply.text)}</pre>'
+            f'<p class="text-muted">tokens {cost_vo.tokens_in} / {cost_vo.tokens_out} · '
+            f"本次 ${cost_vo.cost_usd:.6f} · 累计 ${cost_vo.cumulative_usd:.4f} · "
+            f"预算 {cost_vo.status}</p></div>"
+        )
     return ok(
         {
             "text": reply.text,

@@ -97,12 +97,16 @@ def test_unit_detail_renders_sections(client, csrf_headers):
     _seed_gap(pid, "u1", text="缺口甲")
     r = client.get("/unit/u1")
     assert r.status_code == 200
-    # 四区齐备
+    # 四区齐备（M24 在 ② 与 缺口 之间插入了产出/尝试/闭环/角色四块，编号顺延）
     assert "单元甲" in r.text
     assert "① 单元元信息" in r.text
-    assert "② 工作流（M2）" in r.text
-    assert "③ 缺口（M7）" in r.text
-    assert "④ 挑错（M5）" in r.text
+    assert "② 工作流" in r.text
+    assert "③ 产出（回归主线）" in r.text
+    assert "④ 记录一次尝试" in r.text
+    assert "⑤ 判定闭环" in r.text
+    assert "⑥ AI 辅助（角色调用）" in r.text
+    assert "⑦ 缺口清单" in r.text
+    assert "⑧ 挑错清单" in r.text
     # 工作流面板锚点 + 当前状态 + 可推进按钮
     assert 'id="wf-panel"' in r.text
     assert "当前状态" in r.text

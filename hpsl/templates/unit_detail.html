@@ -30,12 +30,97 @@
 </section>
 
 <section>
-  <h2>② 工作流（M2）</h2>
+  <h2>② 工作流</h2>
   {% include "_unit_wf_panel.html" %}
 </section>
 
 <section>
-  <h2>③ 缺口（M7）</h2>
+  <h2>③ 产出（回归主线）</h2>
+  <p class="text-muted">先动手做出点东西（一段代码、一份分析、一个结论），再进入验证——这样检验的是「应用层面的理解」。</p>
+  <form hx-post="/api/v1/units/{{ unit.id }}/production" hx-target="#production-result" hx-swap="innerHTML">
+    <label>本单元产出<br>
+      <textarea class="textarea" name="production" rows="4"
+                placeholder="例：跑通汇总脚本，写出 groupby 与透视表的三点异同">{{ unit.production or '' }}</textarea></label>
+    <p><button class="btn btn-primary" type="submit">保存产出</button></p>
+  </form>
+  <div id="production-result"></div>
+</section>
+
+<section>
+  <h2>④ 记录一次尝试</h2>
+  <p class="text-muted">重述用固定三问（它解决什么问题／它怎么工作的／什么条件下不适用）；边界题先作答并自评，再对照评分要点给确认得分。</p>
+  <form hx-post="/api/v1/units/{{ unit.id }}/attempts" hx-target="#attempt-result" hx-swap="innerHTML">
+    <p>
+      <label>类型<br>
+        <select class="select" name="kind">
+          <option value="重述">重述（固定三问）</option>
+          <option value="边界">边界题</option>
+          <option value="追问">追问</option>
+        </select></label>
+    </p>
+    <p>
+      <label>自评（0–1）<br>
+        <input class="input" type="number" name="self_score" step="0.01" min="0" max="1"></label>
+    </p>
+    <p>
+      <label>确认得分（0–1）<br>
+        <input class="input" type="number" name="confirmed_score" step="0.01" min="0" max="1"></label>
+    </p>
+    <p>
+      <label>用时（秒，可留空）<br>
+        <input class="input" type="number" name="seconds" min="0"></label>
+    </p>
+    <p><button class="btn" type="submit">记录这次尝试</button></p>
+  </form>
+  <div id="attempt-result"></div>
+</section>
+
+<section>
+  <h2>⑤ 判定闭环</h2>
+  <p class="text-muted">达到通过阈值会自动闭环；未达标仍可强行闭环，但必须写理由，且该单元会带「强行闭环」标记、不计入进度。</p>
+  <form hx-post="/api/v1/units/{{ unit.id }}/close" hx-target="#wf-panel" hx-swap="outerHTML">
+    <p>
+      <label>确认得分（0–1）<br>
+        <input class="input" type="number" name="confirmed_score" step="0.01" min="0" max="1" required></label>
+    </p>
+    <p>
+      <label>强行闭环理由（仅未达标时填）<br>
+        <input class="input" type="text" name="close_reason" maxlength="500"></label>
+    </p>
+    <p><button class="btn btn-primary" type="submit">判定并闭环</button></p>
+  </form>
+  <div id="close-result"></div>
+</section>
+
+<section>
+  <h2>⑥ AI 辅助（角色调用）</h2>
+  <p class="text-muted">每个角色只看到契约允许的字段；答案机的输出不会回流给提问者/出题者/挑错者。</p>
+  <form id="role-form" hx-post="/api/v1/roles/questioner/call" hx-target="#role-result" hx-swap="innerHTML">
+    <input type="hidden" name="unit_id" value="{{ unit.id }}">
+    <p>
+      <label>角色<br>
+        <select class="select" name="role" id="role-select"
+                onchange="var f=document.getElementById('role-form'); f.setAttribute('hx-post','/api/v1/roles/'+this.value+'/call'); htmx.process(f);">
+          <option value="questioner">提问者（苏格拉底式追问）</option>
+          <option value="answer_machine">答案机（按需答疑）</option>
+          <option value="boundary_setter">出题者（边界题）</option>
+          <option value="critic">挑错者（独立评审）</option>
+          <option value="clerk">书记员（抽取候选缺口）</option>
+          <option value="topic_picker">选题（候选主题）</option>
+        </select></label>
+    </p>
+    <p>
+      <label>这次想让它处理的内容<br>
+        <textarea class="textarea" name="learner_input" rows="3"
+                  placeholder="例：我的重述 —— groupby 是先按列分组，再对每组做聚合……"></textarea></label>
+    </p>
+    <p><button class="btn" type="submit">发给该角色</button></p>
+  </form>
+  <div id="role-result"></div>
+</section>
+
+<section>
+  <h2>⑦ 缺口清单</h2>
   {% if gaps %}
     <ul id="gap-list" class="list-clean">
     {% for g in gaps %}
@@ -50,7 +135,7 @@
 </section>
 
 <section>
-  <h2>④ 挑错（M5）</h2>
+  <h2>⑧ 挑错清单</h2>
   {% if claim_checks %}
     <div id="cc-list">
     {% for cc in claim_checks %}

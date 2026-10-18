@@ -292,6 +292,10 @@ async def create_unit_api(req: Request):
         },
         "user",
     )
+    if _is_htmx(req):
+        return HTMLResponse(
+            "<p class='ok'>已创建单元，正在刷新…</p>", headers={"HX-Refresh": "true"}
+        )
     return ok(
         {
             "id": uid,
@@ -315,6 +319,8 @@ async def unit_production_api(req: Request, uid: str):
     if len(production) > 20000:
         raise BizError("C400001", msg="production 过长（≤20000 字符）")
     db.write(pid, "unit", {"id": uid, "production": production}, "user")
+    if _is_htmx(req):
+        return HTMLResponse("<p class='ok'>产出已保存。下一步：推进到「验证」，再记录重述/边界题得分。</p>")
     return ok({"unit_id": uid, "length": len(production)})
 
 
@@ -360,6 +366,8 @@ async def create_attempt_api(req: Request, uid: str):
         },
         "user",
     )
+    if _is_htmx(req):
+        return HTMLResponse(f"<p class='ok'>已记录一次「{kind}」。</p>")
     return ok({"attempt_id": attempt_id, "kind": kind})
 
 
@@ -391,6 +399,22 @@ async def close_unit_api(req: Request, uid: str):
     payload = vo.to_dict()
     payload["reviews_enqueued"] = len(enqueued)
     payload["review_ids"] = enqueued
+    if _is_htmx(req):
+        panel = _TEMPLATES.TemplateResponse(
+            request=req,
+            name="_unit_wf_panel.html",
+            context={
+                "unit": {"id": uid, "status": payload["status"]},
+                "allowed_next": payload["allowed_next"],
+            },
+        )
+        msg = (
+            f"已闭环，复测入队 {len(enqueued)} 条（2 天后到期）。"
+            if enqueued
+            else "已闭环；本单元尚未关联概念，暂无复测。"
+        )
+        oob = f'<div id="close-result" hx-swap-oob="true"><p class="ok">{msg}</p></div>'
+        return HTMLResponse(panel.body.decode("utf-8") + oob)
     return ok(payload)
 
 

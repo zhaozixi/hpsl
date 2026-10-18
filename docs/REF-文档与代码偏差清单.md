@@ -46,6 +46,8 @@
 
 ## 2. P1：能力缺失 / 用户可见缺陷（15 项）
 
+> **修复状态（2026-10-18 · M24 P0-B）**：P1-08（设置保存）/ P1-09（配额弹层）/ P1-10（`p.ok` 样式）/ P1-13（备份列表不刷新）/ P1-14（错误无提示）/ P1-15（术语残留）**已修复**；P1-11（HTMX CDN）与 P1-12（graph `innerHTML`）未修，见 [M24-交付报告](M24-交付报告.md) §4。
+
 | # | 文档依据 | 代码现状（证据） | 影响 | 建议 |
 |---|---|---|---|---|
 | P1-01 | 系统设计 §7：42 个 `/api/v1` | 实测 **36 个**（M24 前为 31；+5：units/production/attempts/close/roles call）。缺失组：`units`（sessions/degrade）、`roles/contracts`、`providers/*/chat`、验证判分组（restatement/boundary-answer/followup/self-score/confirm-score/force-close/critic/rubric）、`ledger/*`、`audit/{id}/undo`、`cost/*`（设计中的 `transition` 以 `/units/{uid}/move` 落地，命名不同） | 设计中的"学习工作台"仍不完整，但主链已可用 | 其余按需补 |

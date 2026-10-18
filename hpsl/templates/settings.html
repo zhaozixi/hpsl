@@ -95,20 +95,18 @@ function saveSettings(e) {
   }
   var status = document.getElementById('save-status');
   status.textContent = '保存中…';
-  var xhr = htmx.ajax('PUT', '/api/v1/projects/{{ project.id }}/config', {
-    headers: { 'Content-Type': 'application/json' },
+  var m = document.cookie.match(/(^| )hpsl_csrf=([^;]+)/);
+  var token = m ? decodeURIComponent(m[2]) : '';
+  fetch('/api/v1/projects/{{ project.id }}/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
     body: JSON.stringify(body)
-  });
-  if (xhr) {
-    xhr.addEventListener('load', function () {
-      status.textContent = (xhr.status >= 200 && xhr.status < 300) ? '已保存' : '保存失败';
-    });
-    xhr.addEventListener('error', function () {
-      status.textContent = '保存失败';
-    });
-  } else {
+  }).then(function (resp) {
+    if (resp.ok) { status.textContent = '已保存'; return; }
+    status.textContent = '保存失败（HTTP ' + resp.status + '）';
+  }).catch(function () {
     status.textContent = '保存失败';
-  }
+  });
   return false;
 }
 </script>
