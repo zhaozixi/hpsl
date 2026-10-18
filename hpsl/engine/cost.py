@@ -71,6 +71,12 @@ def _provider_of(model_id: str) -> str:
         return "unknown"
 
 
+def unpriced_models(pid: str) -> list[str]:
+    """返回本项目调用过、但 `pricing.yaml` 未登记价格的模型（成本计 0，需用户补价）。"""
+    rows = db.query(pid, "SELECT DISTINCT model FROM llm_call")
+    return sorted({r["model"] for r in rows if _pricing_for(r["model"]) is None})
+
+
 def _input_hash(role: str, model_id: str, text: str) -> str:
     """调用输入指纹（幂等索引组成部分）。
 

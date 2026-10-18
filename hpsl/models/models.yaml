@@ -80,6 +80,12 @@ models:
     derived_from: null
     supports_json: true
     is_fallback_for: null
+  - id: deepseek-v4-pro
+    provider: deepseek
+    family: deepseek
+    derived_from: null
+    supports_json: true
+    is_fallback_for: null
   - id: deepseek-chat
     provider: deepseek
     family: deepseek

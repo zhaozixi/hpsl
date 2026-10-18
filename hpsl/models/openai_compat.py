@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Callable, Optional
 
@@ -48,6 +49,7 @@ class OpenAICompatAdapter:
         backoff: Optional[Callable[[int], float]] = None,
         on_call: Optional[Callable[[dict], None]] = None,
         _post: Optional[Callable[..., "httpx.Response"]] = None,
+        _stream: Optional[Callable[..., object]] = None,
     ):
         self.name = name
         self.base_url = base_url.rstrip("/")
@@ -61,6 +63,8 @@ class OpenAICompatAdapter:
         self._key_resolver = key_resolver or _default_key_resolver(self._provider)
         # 默认走真实 httpx.post（url 为位置参数）；测试可注入 fake
         self._post = _post or (lambda *args, **kw: httpx.post(*args, **kw))
+        # 流式：httpx.stream 返回上下文管理器；测试可注入 fake
+        self._stream = _stream or (lambda *args, **kw: httpx.stream(*args, **kw))
 
     # -- 内部：请求构造 ---------------------------------------------------
     def _build_headers(self) -> dict:
@@ -158,3 +162,47 @@ class OpenAICompatAdapter:
             ERR_PROVIDER_EXHAUSTED,
             msg=f"Provider {self._provider} 调用失败（重试耗尽）：{last_exc}",
         )
+
+    # -- 对外：流式补全 ---------------------------------------------------
+    def stream_complete(self, messages: list[Msg], *, json_schema: Optional[dict] = None):
+        """流式补全（OpenAI 兼容 SSE）。
+
+        产出事件 dict：
+        - `{"delta": "<文本增量>"}`
+        - `{"usage": {...}}`（若上游在最后一块返回 usage；请求已带 stream_options）
+        调用方负责把 delta 推给前端，并在结束时用累计文本 + usage 记账。
+        上游 4xx/5xx → A040001；JSON 解析失败 → A040004。
+        """
+        url = f"{self.base_url}/chat/completions"
+        headers = self._build_headers()
+        body = self._build_body(messages, json_schema=json_schema)
+        body["stream"] = True
+        body["stream_options"] = {"include_usage": True}
+
+        status = 200
+        with self._stream("POST", url, headers=headers, json=body, timeout=self.timeout) as resp:
+            status = getattr(resp, "status_code", 200)
+            if status >= 400:
+                raise BizError(
+                    ERR_PROVIDER_EXHAUSTED,
+                    msg=f"Provider {self._provider} 流式调用失败（HTTP {status}）",
+                )
+            for raw_line in resp.iter_lines():
+                line = (raw_line or "").strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(payload)
+                except (json.JSONDecodeError, TypeError) as exc:
+                    raise BizError(ERR_STRUCTURED, msg=f"流式响应解析失败：{exc}") from exc
+                usage = chunk.get("usage")
+                if isinstance(usage, dict) and usage:
+                    yield {"usage": usage}
+                for choice in chunk.get("choices") or []:
+                    delta = (choice.get("delta") or {}).get("content")
+                    if delta:
+                        yield {"delta": delta}
+        return

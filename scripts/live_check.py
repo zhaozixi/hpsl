@@ -48,6 +48,7 @@ def main() -> int:
     parser.add_argument("--model", default="deepseek-flash")
     parser.add_argument("--role", default="clerk")
     parser.add_argument("--text", default="测试：请用一句话说明 JSON 的用途。")
+    parser.add_argument("--stream", action="store_true", help="额外验证 SSE 流式接口")
     args = parser.parse_args()
 
     key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("HPSL_LIVE_KEY")
@@ -95,6 +96,17 @@ def main() -> int:
             "sessions": db.query(pid, "SELECT count(*) c FROM session")[0]["c"],
             "objects": db.count_user_objects(pid),
         }
+        if args.stream:
+            with client.stream(
+                "POST",
+                f"/api/v1/providers/{args.provider}/chat/stream",
+                headers=headers,
+                json={"messages": [{"role": "user", "content": "用一句话说明 JSON 的用途。"}]},
+            ) as resp:
+                sse = "".join(resp.iter_text())
+            summary["stream_deltas"] = sse.count('"delta"')
+            summary["stream_done"] = '"done": true' in sse
+            summary["stream_cost_head"] = sse[-260:]
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         ok = bool(result["text"]) and summary["llm_calls"] == 1 and summary["turns"] == 2
         return 0 if ok else 1

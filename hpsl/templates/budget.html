@@ -38,6 +38,16 @@
   {% endif %}
 </section>
 
+{% if unpriced %}
+<section>
+  <h2>未登记价格的模型</h2>
+  <div class="notice">
+    以下模型在 <code>pricing.yaml</code> 中没有价格，花费按 0 计（预算不会拦截）：
+    <b>{{ unpriced | join('、') }}</b>。请按厂商官网补 <code>in_per_1k</code> / <code>out_per_1k</code>。
+  </div>
+</section>
+{% endif %}
+
 {% if blocked %}
 <section>
   <h2>超限待确认（A080001）</h2>

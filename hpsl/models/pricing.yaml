@@ -1,7 +1,14 @@
-# HPSL 价格表（用户可维护）。单位：美元 / 1K tokens。
-# M4 仅占位读取（cost 记账钩子属 M8，此处为后续成本治理预留数据）。
-# 注意：未登记的模型 cost=0（不参与预算拦截）。deepseek-flash（V4.1-Flash）尚未登记，
-# 请按 DeepSeek 官网价格补 in_per_1k / out_per_1k，否则该模型的花费恒为 0。
+# HPSL 价格表（用户可维护）。单位：**美元 / 1K tokens**。
+# 来源：DeepSeek 官方定价页 https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
+#       （原表为「元 / 百万 tokens」；此处按 1 USD = 7.2 CNY 换算，并按**高峰时段**取价，
+#        宁可高估预算也不低估；汇率变动请自行调整数值）
+# 注意：未登记的模型 cost=0（不参与预算拦截），接口会通过 `unpriced_models` 标出。
+#
+# DeepSeek 换算：
+#   deepseek-flash  输入(未命中缓存) 2 元/M = 0.002 元/K → 0.0002778 USD/K
+#                   输出            8 元/M = 0.008 元/K → 0.0011111 USD/K
+#   deepseek-v4-pro 输入            9 元/M = 0.009 元/K → 0.00125   USD/K
+#                   输出           27 元/M = 0.027 元/K → 0.00375   USD/K
 
 currency: USD
 
@@ -9,6 +16,12 @@ models:
   gpt-4o-mini:
     in_per_1k: 0.00015
     out_per_1k: 0.0006
+  deepseek-flash:
+    in_per_1k: 0.0002778
+    out_per_1k: 0.0011111
+  deepseek-v4-pro:
+    in_per_1k: 0.00125
+    out_per_1k: 0.00375
   deepseek-chat:
     in_per_1k: 0.0001
     out_per_1k: 0.0002

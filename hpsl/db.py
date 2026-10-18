@@ -426,12 +426,15 @@ def close_all() -> None:
         close_project(pid)
 
 
-def backup_project(pid: str, dest_dir: Optional[Path] = None) -> str:
+def backup_project(
+    pid: str, dest_dir: Optional[Path] = None, now_utc: Optional[str] = None
+) -> str:
     """完整快照备份（F1，M0 WAL + VACUUM INTO）。
 
     - 先 `PRAGMA wal_checkpoint(TRUNCATE)` 将 WAL 合入主库，保证快照含最近的未决写。
     - 再 `VACUUM INTO` 复制为独立紧凑库文件到项目 `backups/` 子目录（M1 已建）。
     - 目的地文件名带 UTC 时间戳 + 短 uuid 防重（VACUUM INTO 要求目标文件不存在）。
+    - `now_utc`：可选时钟注入（每日快照用其判定/命名当天日期）；缺省取当前 UTC。
     - **零 DDL**：仅向项目目录外部写新文件，不改动任何库内对象（count_user_objects 不变）。
     - 返回备份文件绝对路径字符串。
     """
@@ -439,7 +442,8 @@ def backup_project(pid: str, dest_dir: Optional[Path] = None) -> str:
         dest_dir = _config.project_dir(pid) / "backups"
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    ts = "-".join(_now_utc().split(":"))  # 文件名禁用冒号（用 split/join 而非字符串替换，避免误伤源码 SQL 词扫）
+    stamp = now_utc or _now_utc()
+    ts = "-".join(stamp.split(":"))  # 文件名禁用冒号（用 split/join 而非字符串替换，避免误伤源码 SQL 词扫）
     dest = dest_dir / f"project-{ts}-{uuid.uuid4().hex[:8]}.db"
     conn = get_write_conn(pid)
     conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -534,6 +538,151 @@ def rotate_all_backups(keep_daily: int = 7, keep_monthly: int = 12) -> dict[str,
         except Exception:
             continue
     return result
+
+
+# ---------------------------------------------------------------------------
+# 每日自动快照（P1-04）：每项目每天（UTC）至多一份，幂等；零 DDL
+# ---------------------------------------------------------------------------
+def _has_daily_snapshot(dest_dir: Path, day: str) -> bool:
+    """backups/ 下是否已有当天（UTC 日期 YYYY-MM-DD）的 `project-YYYY-MM-DD...db`。"""
+    if not dest_dir.is_dir():
+        return False
+    for p in dest_dir.glob(f"{_BACKUP_PREFIX}{day}*.db"):
+        if not p.is_file():
+            continue
+        m = _BACKUP_RE.match(p.name)
+        if m and "-".join(m.groups()[:3]) == day:
+            return True
+    return False
+
+
+def daily_snapshot_all(now_utc: Optional[str] = None) -> dict[str, str]:
+    """为全部项目补当日（UTC）快照；已有当天快照则跳过（幂等，零 DDL）。
+
+    - 遍历 projects.list_projects()，按 `backups/project-YYYY-MM-DD...db` 判定当天是否已备份。
+    - 缺当日快照时复用既有 `backup_project(pid)`（WAL checkpoint + VACUUM INTO + 自动轮转）。
+    - `now_utc` 可选注入时钟（测试/外部调度）；缺省取当前 UTC。
+    - 单项目失败不影响其他项目；返回 {pid: 新快照路径}，跳过的项目不在结果中。
+    """
+    from . import projects as _projects
+    stamp = now_utc or _now_utc()
+    day = stamp[:10]  # ISO-8601 UTC 文本的前 10 位即 YYYY-MM-DD
+    created: dict[str, str] = {}
+    for p in _projects.list_projects():
+        pid = getattr(p, "id", None)
+        if not pid:
+            continue
+        try:
+            dest_dir = _config.project_dir(pid) / "backups"
+            if _has_daily_snapshot(dest_dir, day):
+                continue
+            # 默认路径严格复用 backup_project(pid)；注入时钟时透传以保证文件名与判定日一致
+            if now_utc is None:
+                path = backup_project(pid)
+            else:
+                path = backup_project(pid, now_utc=now_utc)
+            created[pid] = path
+        except Exception:
+            continue  # 单项目失败不影响其他项目
+    return created
+
+
+# ---------------------------------------------------------------------------
+# 快照恢复（P1-04）：校验 → 留底 → 替换 → 复检；零 DDL（仅文件级操作）
+# ---------------------------------------------------------------------------
+def _integrity_status(db_file: Path) -> tuple[bool, str]:
+    """用临时只读连接做 `PRAGMA integrity_check`；返回 (是否ok, 状态文本)。"""
+    try:
+        conn = sqlite3.connect(db_file.as_uri() + "?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        return False, str(exc)
+    try:
+        row = conn.execute("PRAGMA integrity_check").fetchone()
+        status = str(row[0]) if row else "unknown"
+        return status.lower() == "ok", status
+    except sqlite3.Error as exc:
+        return False, str(exc)
+    finally:
+        conn.close()
+
+
+def restore_project(pid: str, backup_file: str) -> dict:
+    """从项目 backups/ 内的快照恢复 project.db（P1-04；零 DDL，仅文件级操作）。
+
+    步骤：safe_path 校验 → 备份文件必须位于项目 backups/ 内且存在 →
+    临时连接 `PRAGMA integrity_check`（非 ok → B999001）→ 当前库留底为
+    `backups/pre-restore-<UTC>-<uuid8>.db` → close_project → 删除 -wal/-shm →
+    copy2 覆盖 project.db → 重新 get_write_conn 并复检（失败 → B999001 并提示留底文件）。
+
+    返回 {"pid", "restored_from", "pre_restore", "objects"}；越界/不存在 → C400001，
+    项目不存在 → A010001，快照损坏 → B999001。
+    """
+    safe_path(pid)  # 先校验 pid 不越出 projects_root（越界 → C400002）
+    db_file = safe_path(pid, "project.db")
+    if not db_file.exists():
+        raise BizError("A010001", msg=f"项目 {pid} 不存在")
+    base = safe_path(pid, "backups")
+
+    raw = Path(backup_file)
+    candidate = raw if raw.is_absolute() else (base / raw)
+    try:
+        candidate = candidate.resolve()
+    except OSError as exc:
+        raise BizError("C400001", msg=f"备份文件路径非法：{backup_file}") from exc
+    # 防越界：解析后必须仍在项目 backups/ 内（symbolic link 亦被 resolve 消解）
+    if candidate != base and base not in candidate.parents:
+        raise BizError("C400001", msg="备份文件必须位于项目 backups/ 目录内")
+    if not candidate.is_file():
+        raise BizError("C400001", msg=f"备份文件不存在：{backup_file}")
+
+    # 恢复前先校验快照本身；损坏则不触碰当前库
+    ok, status = _integrity_status(candidate)
+    if not ok:
+        raise BizError(
+            "B999001", msg=f"备份文件完整性校验失败（{status}）：{candidate.name}"
+        )
+
+    # 当前库留底（存在时）：先 checkpoint 把 WAL 合入主库，保证留底完整
+    ts = "-".join(_now_utc().split(":"))
+    pre_restore_path = base / f"pre-restore-{ts}-{uuid.uuid4().hex[:8]}.db"
+    try:
+        get_write_conn(pid).execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except Exception:
+        pass  # 留底尽力而为；后续 close_project 仍会 checkpoint
+    shutil.copy2(db_file, pre_restore_path)
+    pre_restore = str(pre_restore_path)
+
+    # 关闭写连接 → 清理 WAL/SHM 残留 → 覆盖主库文件
+    close_project(pid)
+    for suffix in ("-wal", "-shm"):
+        side = Path(str(db_file) + suffix)
+        try:
+            if side.exists():
+                side.unlink()
+        except OSError:
+            pass
+    shutil.copy2(candidate, db_file)
+
+    # 重新建立写连接并复检；失败时提示 pre-restore 留底文件
+    try:
+        conn = get_write_conn(pid)
+        row = conn.execute("PRAGMA integrity_check").fetchone()
+        after_status = str(row[0]) if row else "unknown"
+    except Exception as exc:  # sqlite3.Error 及迁移期异常
+        after_status = str(exc)
+    if after_status.lower() != "ok":
+        close_project(pid)
+        raise BizError(
+            "B999001",
+            msg=f"恢复后完整性校验失败（{after_status}）；原库已留底至 {pre_restore}，可手动恢复",
+        )
+
+    return {
+        "pid": pid,
+        "restored_from": str(candidate),
+        "pre_restore": pre_restore,
+        "objects": count_user_objects(pid),
+    }
 
 
 # ---------------------------------------------------------------------------

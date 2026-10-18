@@ -74,6 +74,7 @@ def budget_page(req: Request):
             "rows": rows,
             "blocked": blocked,
             "cap": (rows[0]["cost"]["budget_cap_usd"] if rows else None),
+            "unpriced": cost.unpriced_models(pid),
         },
     )
 

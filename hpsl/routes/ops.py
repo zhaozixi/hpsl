@@ -129,5 +129,7 @@ def monthly_cost_api():
             "cumulative_usd": cumulative,
             "budget_cap_usd": cap,
             "status": cost_engine._status(cumulative, cap, 0),
+            # 未登记价格的模型：成本按 0 计，这里显式暴露，避免"预算永远不超"的假象
+            "unpriced_models": cost_engine.unpriced_models(pid),
         }
     )

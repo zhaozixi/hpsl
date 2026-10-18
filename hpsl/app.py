@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 try:
@@ -38,6 +39,8 @@ from .routes import wizard as wizard_routes
 from .routes import export as export_routes
 from .routes import stats as stats_routes
 from .routes import ops as ops_routes
+from .routes import judge as judge_routes
+from .routes import providers as providers_routes
 
 if FastAPI is not None:
     # 生产形态关闭交互文档与 OpenAPI（安全设计 §4.2.2 / T-15）；无对外 API 消费方
@@ -68,6 +71,8 @@ if FastAPI is not None:
     app.include_router(export_routes.api_router)
     app.include_router(stats_routes.api_router)
     app.include_router(ops_routes.api_router)
+    app.include_router(judge_routes.api_router)
+    app.include_router(providers_routes.api_router)
     app.include_router(projects_routes.page_router)
     app.include_router(ledger_routes.page_router)
     app.include_router(review_routes.page_router)
@@ -134,34 +139,41 @@ def serve(host: str = "127.0.0.1", port: int | None = None) -> None:
     # 退出前释放全部项目连接（隐含 WAL checkpoint），保证本地库持久化
     atexit.register(db.close_all)
 
-    # 启动即轮转：清理各项目过期快照（零 DDL，best-effort，避免阻塞启动）
+    # 启动即维护：补当日快照 + 清理各项目过期快照（零 DDL，best-effort，避免阻塞启动）
+    try:
+        db.daily_snapshot_all()
+    except Exception:
+        pass
     try:
         db.rotate_all_backups()
     except Exception:
         pass
 
-    # 周期定时轮转（本地单用户工具的「调度」实现）：daemon 线程，间隔经 env 可配
+    # 周期定时维护（本地单用户工具的「调度」实现）：daemon 线程，间隔经 env 可配
     import logging
     import os
     import threading
-    import time
 
     _interval = int(os.environ.get("HPSL_ROTATE_INTERVAL_SECONDS", "21600"))  # 默认 6h
     _stop = threading.Event()
 
-    def _rotate_loop() -> None:
+    def _maintenance_loop() -> None:
         while not _stop.is_set():
             if _stop.wait(_interval):
                 break
+            try:
+                db.daily_snapshot_all()
+            except Exception:  # 单轮失败不影响主服务
+                logging.getLogger("hpsl").warning("周期每日快照失败", exc_info=True)
             try:
                 db.rotate_all_backups()
             except Exception:  # 单轮失败不影响主服务
                 logging.getLogger("hpsl").warning("周期备份轮转失败", exc_info=True)
 
-    _rotate_thread = threading.Thread(
-        target=_rotate_loop, name="hpsl-backup-rotate", daemon=True
+    _maintenance_thread = threading.Thread(
+        target=_maintenance_loop, name="hpsl-backup-maintenance", daemon=True
     )
-    _rotate_thread.start()
+    _maintenance_thread.start()
     atexit.register(_stop.set)
 
     port = port or _config.service_port()
@@ -180,6 +192,10 @@ def main(argv: list[str] | None = None) -> None:
     sub_rotate.add_argument("--pid", default=None, help="指定项目 id；缺省则全部项目")
     sub_backup = sub.add_parser("backup", help="立即导出并轮转全部/指定项目快照（可外部 cron）")
     sub_backup.add_argument("--pid", default=None, help="指定项目 id；缺省则全部项目")
+    sub_snapshot = sub.add_parser("snapshot", help="立即为全部项目补当天（UTC）快照（幂等，可外部 cron）")
+    sub_restore = sub.add_parser("restore", help="从项目 backups/ 内快照恢复 project.db")
+    sub_restore.add_argument("--pid", required=True, help="项目 id")
+    sub_restore.add_argument("--file", required=True, help="备份文件（文件名或 backups/ 内路径）")
     args = parser.parse_args(argv)
     if args.cmd == "serve":
         serve(host=args.host, port=args.port)
@@ -204,6 +220,27 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"[backup] {pid}: {path}")
             except Exception as e:  # 单项目失败不中断其余
                 print(f"[backup] {pid} failed: {e}")
+    elif args.cmd == "snapshot":
+        from . import db
+        created = db.daily_snapshot_all()
+        for pid, path in created.items():
+            print(f"[snapshot] {pid}: {path}")
+        if not created:
+            print("[snapshot] up to date")
+    elif args.cmd == "restore":
+        from . import db
+        try:
+            info = db.restore_project(args.pid, args.file)
+        except BizError as e:  # 业务/参数错误：打印错误并以退出码 1 结束，不抛未捕获堆栈
+            print(f"[restore] {args.pid} failed: [{e.code}] {e.msg}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:  # 文件/数据库异常同样收敛为退出码 1
+            print(f"[restore] {args.pid} failed: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(
+            f"[restore] {args.pid}: restored_from={info['restored_from']} "
+            f"pre_restore={info['pre_restore']} objects={info['objects']}"
+        )
     else:
         parser.print_help()
 

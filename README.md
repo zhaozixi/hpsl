@@ -45,7 +45,7 @@ export HPSL_MASTER_PASSPHRASE="换成一个足够长的口令"      # bash
 hpsl serve
 # 浏览器打开 http://127.0.0.1:8765
 
-# 运行全量测试（M0–M27，约 408 例，含零 DDL 守护）
+# 运行全量测试（M0–M29，约 456 例，含零 DDL 守护）
 pytest -q
 ```
 
@@ -92,3 +92,6 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 会话回放：角色调用写入 `turn`，单元详情按时间展示对话（M26）
 - 运维接口：账本/审计/成本 REST + 一键撤销 + 角色契约与输入预览（M27）
 - 离线可用：HTMX 1.9.12 本地内置（`static/htmx.min.js`，M27）
+- 成本与判定：DeepSeek 官方价表、未登记价格提示、自评/确认得分/要点守卫/强行闭环/挑错端点（M29）
+- 直连与流式：`/providers/{name}/chat` 与 SSE `/chat/stream`（M29）
+- 备份与发布：每日快照 + `hpsl restore`、对话记录导出、Apache-2.0 LICENSE、requirements 锁定（M29）

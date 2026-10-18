@@ -15,6 +15,44 @@
    "每当一项内容验证通过，系统会生成一张卡片，写清要点与对应的概念。日后复习、回顾都靠它。") }}
 
 <section>
+  <h2>新建概念</h2>
+  <form hx-post="/api/v1/concepts" hx-target="#concept-result" hx-swap="innerHTML"
+        enctype="application/x-www-form-urlencoded">
+    <p>
+      <label>概念名<br>
+        <input class="input" type="text" name="name" required maxlength="100"
+               placeholder="例：DataFrame 的索引对齐"></label>
+    </p>
+    <p><button class="btn btn-primary" type="submit">创建概念</button></p>
+  </form>
+  <div id="concept-result"></div>
+</section>
+
+<section>
+  <h2>新建卡片</h2>
+  <form hx-post="/api/v1/cards" hx-target="#card-result" hx-swap="innerHTML"
+        enctype="application/x-www-form-urlencoded">
+    <p>
+      <label>所属概念<br>
+        <select class="select" name="concept_id" required>
+          <option value="">请选择概念</option>
+          {% for c in concepts %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select></label>
+      {% if not concepts %}<small>还没有概念，先在上方「新建概念」创建一个。</small>{% endif %}
+    </p>
+    <p>
+      <label>我的理解（用自己的话）<br>
+        <textarea class="input" name="my_words" required maxlength="500" rows="3"
+                  placeholder="例：两个 Series 相加时，会按索引对齐，对不上的位置变成缺失值。"></textarea></label>
+    </p>
+    <p><button class="btn btn-primary" type="submit">创建卡片</button></p>
+  </form>
+  <div id="card-result"></div>
+</section>
+
+<section>
   <h2>卡片列表（{{ cards|length }}）</h2>
   {% if cards %}
     <ul id="card-list" class="card list-clean">
@@ -26,7 +64,7 @@
     {% endfor %}
     </ul>
   {% else %}
-    <p class="ok">暂无卡片，卡片由学习产出流程生成。</p>
+    <p class="ok">暂无卡片，可以在上方自己新建一张。</p>
   {% endif %}
 </section>
 

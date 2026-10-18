@@ -1,0 +1,11 @@
+# HPSL 运行依赖（版本取自 .venv/Lib/site-packages/*.dist-info 的实际安装版本）
+fastapi==0.143.2
+uvicorn==0.54.0
+httpx==0.28.1
+jinja2==3.1.6
+python-multipart==0.0.32
+
+# 可选依赖：密钥加密（Fernet token 加解密、Argon2 口令派生）。
+# 未安装时应用仍可运行，仅密钥加密相关能力不可用。
+cryptography==50.0.2
+argon2-cffi==25.1.0

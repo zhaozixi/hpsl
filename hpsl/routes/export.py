@@ -1,7 +1,7 @@
 """M11 批次3：Markdown 导出（本地单机 Web 导出功能）。
 
-- `GET  /export`（read_security）：渲染导出页；列出 4 个导出入口
-  （project / units / ledger / concepts），无激活项目时显示「尚未选择项目」提示。
+- `GET  /export`（read_security）：渲染导出页；列出 5 个导出入口
+  （project / units / ledger / concepts / conversations），无激活项目时显示「尚未选择项目」提示。
 - `POST /api/v1/export/{kind}`（write_security）：按 kind 读取库数据，组装干净、人读的
   Markdown，写入 `HPSL_HOME/projects/{pid}/exports/{kind}-{utc}.md`，权限 0600。
 
@@ -40,7 +40,18 @@ api_router = APIRouter(prefix="/api/v1")
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 _TEMPLATES = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
-_EXPORT_KINDS = ("project", "units", "ledger", "concepts")
+_EXPORT_KINDS = ("project", "units", "ledger", "concepts", "conversations")
+
+# 对话记录：turn.role → 中文称呼（未知角色原样输出）
+_ROLE_LABELS = {
+    "user": "我",
+    "answer_machine": "答案机",
+    "questioner": "提问者",
+    "boundary_setter": "出题者",
+    "critic": "挑错者",
+    "clerk": "书记员",
+    "topic_picker": "选题助手",
+}
 
 # ---------------------------------------------------------------------------
 # 密钥红线：导出前对整段 Markdown 做显式脱敏扫描（D1 §6.5）。
@@ -75,6 +86,24 @@ def _trunc(value, n: int = 120) -> str:
     s = "" if value is None else str(value)
     s = s.replace("\n", " ").replace("\r", " ").strip()
     return s if len(s) <= n else s[:n] + "…"
+
+
+def _role_label(role) -> str:
+    """turn.role → 中文称呼；未知角色原样返回。"""
+    r = "" if role is None else str(role)
+    return _ROLE_LABELS.get(r, r)
+
+
+def _quote_block(text) -> list[str]:
+    """把一段内容格式化为 Markdown 引用块：逐行加 `> ` 前缀，避免破坏外层表格。"""
+    s = "" if text is None else str(text)
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+    lines = s.split("\n")
+    while lines and lines[-1] == "":
+        lines.pop()
+    if not lines:
+        return ["> （空）"]
+    return [("> " + ln) if ln else ">" for ln in lines]
 
 
 def _utc_stamp() -> str:
@@ -341,11 +370,65 @@ def _build_concepts_md(pid: str) -> str:
     return _scrub("\n".join(lines))
 
 
+def _build_conversations_md(pid: str) -> str:
+    """对话记录：每个 session 一节；轮次 JOIN session 后按 turn.id 升序（时间序）。
+
+    内容用引用块逐行承载并经 `_scrub()` 脱敏，避免长文本/管道符破坏表格。
+    """
+    sessions = db.query(
+        pid,
+        "SELECT id, unit_id, started_at, ended_at FROM session "
+        "ORDER BY started_at ASC, id ASC",
+    )
+    turns = db.query(
+        pid,
+        "SELECT t.id, t.session_id, t.role, t.content, t.provider, t.model, t.ts "
+        "FROM turn t JOIN session s ON t.session_id = s.id "
+        "ORDER BY t.id ASC",
+    )
+    by_session: dict[str, list[dict]] = {}
+    for t in turns:
+        by_session.setdefault(str(t.get("session_id")), []).append(t)
+
+    lines = ["# 对话记录导出", ""]
+    if not sessions:
+        lines += ["（无对话记录）", ""]
+    else:
+        lines += [f"共 {len(sessions)} 个会话、{len(turns)} 轮对话。", ""]
+        for s in sessions:
+            sid = str(s.get("id") or "—")
+            started = s.get("started_at") or "—"
+            lines += [f"## 会话 {sid} · {started}", ""]
+            rows = by_session.get(sid, [])
+            if not rows:
+                lines += ["（本会话暂无对话轮次）", ""]
+                continue
+            for t in rows:
+                provider = t.get("provider") or ""
+                model = t.get("model") or ""
+                meta = f"{provider}/{model}" if provider and model else (model or provider or "—")
+                content = _scrub("" if t.get("content") is None else str(t.get("content")))
+                lines.append(f"**{_role_label(t.get('role'))}**（{t.get('ts') or '—'}，{meta}）")
+                lines.append("")
+                lines += _quote_block(content)
+                lines.append("")
+
+    lines += [
+        "## 导出信息",
+        "",
+        "- 导出类型：conversations",
+        f"- 导出时间（UTC）：{_now_iso()}",
+        "",
+    ]
+    return _scrub("\n".join(lines))
+
+
 _BUILDERS = {
     "project": _build_project_md,
     "units": _build_units_md,
     "ledger": _build_ledger_md,
     "concepts": _build_concepts_md,
+    "conversations": _build_conversations_md,
 }
 
 
