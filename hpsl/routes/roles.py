@@ -25,7 +25,9 @@ from ..common.errors import BizError
 from ..common.result import ok
 from ..engine.role_llm import call_role
 from ..models import registry
-from .security import rate_limiter, write_security
+from ..roles import assembler
+from ..roles.contracts import CONTRACTS
+from .security import rate_limiter, read_security, write_security
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -100,6 +102,33 @@ def _context(pid: str, role: Role, unit_id: Optional[str], body: dict) -> dict:
         # RoleLLM.build_messages 以 learner_input 作为 user 消息（不进入 system 白名单）
         ctx["learner_input"] = learner_input
     return ctx
+
+
+@api_router.get("/roles/contracts", dependencies=[Depends(read_security)])
+def role_contracts_api():
+    """六角色契约（allow 白名单 + 描述）；供"输入预览/审计"消费。"""
+    return ok(
+        [
+            {
+                "role": c.role.value,
+                "allow": list(c.allow),
+                "description": c.description,
+            }
+            for c in CONTRACTS.values()
+        ]
+    )
+
+
+@api_router.get("/units/{uid}/input-preview", dependencies=[Depends(read_security)])
+def input_preview_api(uid: str, role: str):
+    """F3.3 输入预览：返回该角色**实际可见**的字段与值（不含 allow 之外的内容）。
+
+    只读：不调用模型、不写库。可视化"本次会发给模型的内容"，用于隔离审计。
+    """
+    pid = _require_pid()
+    target = _role_of(role)
+    ctx = _context(pid, target, uid, {})
+    return ok(assembler.preview(target, ctx))
 
 
 @api_router.post("/roles/{role}/call", dependencies=[Depends(write_security)])

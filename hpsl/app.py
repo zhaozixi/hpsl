@@ -37,6 +37,7 @@ from .routes import settings_keys as settings_keys_routes
 from .routes import wizard as wizard_routes
 from .routes import export as export_routes
 from .routes import stats as stats_routes
+from .routes import ops as ops_routes
 
 if FastAPI is not None:
     # 生产形态关闭交互文档与 OpenAPI（安全设计 §4.2.2 / T-15）；无对外 API 消费方
@@ -66,6 +67,7 @@ if FastAPI is not None:
     app.include_router(settings_keys_routes.api_router)
     app.include_router(export_routes.api_router)
     app.include_router(stats_routes.api_router)
+    app.include_router(ops_routes.api_router)
     app.include_router(projects_routes.page_router)
     app.include_router(ledger_routes.page_router)
     app.include_router(review_routes.page_router)

@@ -46,11 +46,11 @@
 
 ## 2. P1：能力缺失 / 用户可见缺陷（15 项）
 
-> **修复状态（2026-10-18 · M24 P0-B）**：P1-08（设置保存）/ P1-09（配额弹层）/ P1-10（`p.ok` 样式）/ P1-13（备份列表不刷新）/ P1-14（错误无提示）/ P1-15（术语残留）**已修复**；P1-11（HTMX CDN）与 P1-12（graph `innerHTML`）未修，见 [M24-交付报告](M24-交付报告.md) §4。
+> **修复状态（2026-10-18）**：M24 P0-B 修复 P1-08 / 09 / 10 / 13 / 14 / 15；**M27 修复 P1-11（HTMX 本地化）与 P1-12（graph 转义）**。P1-06（CSRF 签名 cookie）仍是有记录的取舍。详见 [M27-交付报告](M27-交付报告.md)。
 
 | # | 文档依据 | 代码现状（证据） | 影响 | 建议 |
 |---|---|---|---|---|
-| P1-01 | 系统设计 §7：42 个 `/api/v1` | 实测 **36 个**（M24 前为 31；+5：units/production/attempts/close/roles call）。缺失组：`units`（sessions/degrade）、`roles/contracts`、`providers/*/chat`、验证判分组（restatement/boundary-answer/followup/self-score/confirm-score/force-close/critic/rubric）、`ledger/*`、`audit/{id}/undo`、`cost/*`（设计中的 `transition` 以 `/units/{uid}/move` 落地，命名不同） | 设计中的"学习工作台"仍不完整，但主链已可用 | 其余按需补 |
+| P1-01 | 系统设计 §7：42 个 `/api/v1` | 实测 **44 个**（M24 +5、M27 +8、其中 contracts/preview 为新增能力）。数量已超，但**构成不同**：仍缺验证判分组（restatement/boundary/followup/self-score/confirm-score/force-close/critic/rubric）、`providers/*/chat`、`units/{uid}/sessions`、`degrade`；多出 graph/stats/budget/export/wizard/roles-contracts/preview。设计中的 `transition` 以 `/units/{uid}/move` 落地（命名不同） | 主链与治理读写均已可用；剩余为"细粒度判定端点" | 按需补 |
 | P1-02 | 冻结项 #7（日快照 7 + 月快照 12，RPO≤24h）；部署设计 C4 | 无调度器；实际为"手动导出 + 导出即轮转 + 启动即轮转 + 6h daemon 轮转 + CLI"。**没有"每日自动生成快照"** | RPO≤24h 无载体；用户不点导出就没有当天快照 | 在 `serve()` 增加每日快照任务，或把 RPO 改为"手动快照"并回写文档 |
 | P1-03 | F8.1（8 家，P0/MVP） | `GeminiAdapter.complete` 直接 `raise BizError("A040002")`；向导可填 Gemini、连通性测试也支持 gemini 分支 | 按向导配置 Gemini 的用户，第一次真实调用必然失败 | 要么实现 Gemini，要么在 UI 标"暂不支持" |
 | P1-04 | F9.1；`pricing.yaml` 由用户维护 | 只登记 3 个模型（gpt-4o-mini / deepseek-chat / claude-3-5-haiku）；其余 5 家 11 个模型 `cost=0.0` | qwen/GLM/Kimi/豆包/gpt-4o 用户的花费恒为 0，预算闸门形同虚设 | 补齐价格表；未知模型给"未登记价格"提示而非静默 0 |
@@ -78,7 +78,7 @@
 | P2-04 | A-M6：建议难度区间 `suggest_band`（O3） | `governance.py` 注释明确"v1，本期待留"，无函数 | 未实现 |
 | P2-05 | A-M6：验证状态随时间衰减（F14.1） | `last_verified_at` 只写不读衰减；无衰减计算 | 未实现 |
 | P2-06 | A-M6：周盘点一屏批量裁决（F14.8） | 无页面；`ledger.confirm_gap_candidates` 有引擎无路由 | 未实现（引擎就绪） |
-| P2-07 | F3.3 输入预览（"本次发给模型的内容"） | `roles.assembler.preview` 有函数，无端点/无 UI | 半实现 |
+| P2-07 | F3.3 输入预览（"本次发给模型的内容"） | **已实现**（M27）：`GET /api/v1/units/{uid}/input-preview?role=`，复用 `assembler.preview` | 已实现 |
 | P2-08 | F2.3/F2.4 卡片库、概念图应可写 | `/cards`、`/graph` 只读；无 `POST /cards`、`POST /concept-edges`（仅在设计中） | 只读 |
 | P2-09 | C-M0/M7 撤销"可借助审计日志撤销" | `db.undo` 已实现且有测试，但**无 HTTP 端点**（设计有 `POST /audit/{id}/undo`） | 引擎就绪，无入口 |
 | P2-10 | 论文/方案：每 3–5 单元重构概念图 | 无机制（无提醒、无周期计算） | 未实现 |

@@ -12,6 +12,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.templating import Jinja2Templates
 
 from .. import projects as proj
+from .. import db
 from ..engine import ledger, governance
 from .security import read_security
 
@@ -37,6 +38,10 @@ def ledger_page(req: Request):
     # 软提示关闭按项目持久化：读取 project.config.dismissed_prompts（零 DDL）。
     dismissed = set(proj.get_raw_config(pid).get("dismissed_prompts", []))
     visible = [s for s in signals if s.id not in dismissed]
+    audit = db.query(
+        pid,
+        "SELECT id, ts, actor, table_name, row_id FROM audit_log ORDER BY id DESC LIMIT 20",
+    )
     return _TEMPLATES.TemplateResponse(
         request=req,
         name="ledger.html",
@@ -45,5 +50,6 @@ def ledger_page(req: Request):
             "summary": summary,
             "counts": counts.to_dict(),
             "signals": [s.to_dict() for s in visible],
+            "audit": audit,
         },
     )

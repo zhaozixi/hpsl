@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}HPSL{% endblock %}</title>
-  <!-- HTMX：优先 CDN；离线场景可将 htmx.min.js 拷贝至 hpsl/static/ 并改成本地引用 -->
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <!-- HTMX 1.9.12：本地内置，离线可用（升级时替换 /static/htmx.min.js） -->
+  <script src="/static/htmx.min.js"></script>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/app.js" defer></script>
   <!-- 主题：渲染前应用已存偏好，避免闪烁；偏好存 localStorage（零 DDL） -->

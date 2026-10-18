@@ -232,13 +232,20 @@ svg.addEventListener('click', function (e) {
   if (e.target === svg && selectedId) { selectedId = null; render(); }
 });
 
-// 悬停提示
+// 悬停提示（M27：改用 textContent 构建，避免概念名/时间里的 HTML 被解释）
 function showTooltip(g) {
   const id = g.getAttribute('data-id');
   const n = NODES.find(function (x) { return x.id === id; }) || {};
   const c = CONCEPTS.find(function (x) { return x.id === id; }) || {};
-  tooltip.innerHTML = '<strong>' + (n.name || id) + '</strong> · ' + statusColorName(n.verify_status)
-    + '<br><small>最近验证：' + (c.last_verified_at || '—') + '</small>';
+  tooltip.textContent = '';
+  const strong = document.createElement('strong');
+  strong.textContent = n.name || id;
+  tooltip.appendChild(strong);
+  tooltip.appendChild(document.createTextNode(' · ' + statusColorName(n.verify_status)));
+  tooltip.appendChild(document.createElement('br'));
+  const small = document.createElement('small');
+  small.textContent = '最近验证：' + (c.last_verified_at || '—');
+  tooltip.appendChild(small);
   const rect = svg.getBoundingClientRect();
   const r = g.querySelector('circle').getBoundingClientRect();
   tooltip.style.left = (r.left - rect.left + r.width / 2) + 'px';
@@ -318,8 +325,9 @@ function render() {
 
 function updateDetail() {
   const d = document.getElementById('graph-detail');
+  d.textContent = '';
   if (!selectedId) {
-    d.innerHTML = '点击任意节点查看概念详情与关联；悬停查看状态；滚轮/双指或 ＋－ 缩放。';
+    d.textContent = '点击任意节点查看概念详情与关联；悬停查看状态；滚轮/双指或 ＋－ 缩放。';
     return;
   }
   const c = CONCEPTS.find(function (x) { return x.id === selectedId; }) || {};
@@ -329,10 +337,23 @@ function updateDetail() {
       const other = ed.src === selectedId ? ed.dst : ed.src;
       return nodeName(other) + '（' + (ed.kind || '关联') + '）';
     });
-  d.innerHTML = '<strong>' + (c.name || selectedId) + '</strong> · 验证状态：'
-    + '<span style="color:' + statusColor(c.verify_status) + ';font-weight:700">' + (c.verify_status || '未知') + '</span>'
-    + '<br><small>最近验证：' + (c.last_verified_at || '—') + '</small>'
-    + (related.length ? ('<br>关联：' + related.join('、')) : '');
+  const strong = document.createElement('strong');
+  strong.textContent = c.name || selectedId;
+  d.appendChild(strong);
+  d.appendChild(document.createTextNode(' · 验证状态：'));
+  const status = document.createElement('span');
+  status.style.color = statusColor(c.verify_status);
+  status.style.fontWeight = '700';
+  status.textContent = c.verify_status || '未知';
+  d.appendChild(status);
+  d.appendChild(document.createElement('br'));
+  const small = document.createElement('small');
+  small.textContent = '最近验证：' + (c.last_verified_at || '—');
+  d.appendChild(small);
+  if (related.length) {
+    d.appendChild(document.createElement('br'));
+    d.appendChild(document.createTextNode('关联：' + related.join('、')));
+  }
 }
 
 function zoomBy(factor) {
