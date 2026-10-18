@@ -229,12 +229,17 @@ if (window.htmx) { window.htmx.config.allowEval = false; }
   });
 
   // create.html：原 hx-on::after-request 的逻辑迁到外部脚本（严格 CSP 禁止 hx-on）。
-  // 仅当 create-form 请求成功时重置表单并沿用原有「创建后自动 switch」行为。
+  // 仅当项目真的创建成功时重置表单并沿用原有「创建后自动 switch」行为。
   document.addEventListener('htmx:afterRequest', function (evt) {
     var el = (evt.detail && evt.detail.elt) || evt.target;
     if (!el || el.id !== 'create-form') return;
     if (!(evt.detail && evt.detail.successful)) return;
-    if (el.reset) el.reset();
+    // 业务错误也返回 200（HTMX 分支固定 200 才能被 swap），故 successful 不足以
+    // 判定成败：只认成功片段带回来的 data-project-id。否则重名/校验失败会把
+    // 用户已填的名称与目标一并清空（M36 回归 R-01）。
+    var box = document.getElementById('result');
+    var created = !!(box && box.querySelector('[data-project-id]'));
+    if (created && el.reset) el.reset();
     if (typeof window.hpslAfterCreate === 'function') window.hpslAfterCreate();
   });
 })();

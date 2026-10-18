@@ -12,7 +12,7 @@
   交指定模型核对，核对意见写入 `claim_check`（claim="评分要点核对"）。
 
 纪律：零 DDL（只用 claim_check / attempt / session / llm_call / turn 既有表列）；
-不新增错误码（复用 C400001 / A040001 / A040003 / A010001）；不编辑 app.py，
+不新增错误码（复用 A020001 / C400001 / A040001 / A040003 / A010001）；不编辑 app.py，
 router 以模块级 `api_router`（prefix=/api/v1）暴露，由 app 装配方挂载。
 """
 
@@ -66,10 +66,14 @@ async def _parse_body(req: Request) -> dict:
 
 
 def _unit(pid: str, uid: str) -> dict:
-    """取单元（不存在 → C400001；写入 claim_check / session 前先校验，避免 FK 失败）。"""
+    """取单元（不存在 → A020001；写 claim_check / session 前先校验，避免 FK 失败）。
+
+    与 unit.py::_get_unit / providers.py 保持一致：同域「单元不存在」统一走 A020001，
+    不再借用全局参数校验码 C400001（M36 回归 R-02）。
+    """
     rows = db.query(pid, "SELECT id, title FROM unit WHERE id=?", (uid,))
     if not rows:
-        raise BizError("C400001", msg=f"单元 {uid} 不存在")
+        raise BizError("A020001", msg=f"单元 {uid} 不存在")
     return rows[0]
 
 

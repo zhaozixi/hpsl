@@ -5,7 +5,7 @@
   页面回显与表单接线、缺字段 / 空白 / 超长 → C400001、未知单元 → 既有错误码。
 - HTMX 成功：提示文案 + `hpsl:refresh` 事件，不再 `HX-Refresh` 整页刷新。
 - 自动交叉验证：按 provider 去重取 3 家 → 3 条 answers / 3 条 llm_call / 6 条 turn；
-  只有 1 家 provider → C400001；未知单元 → C400001；缺 question → C400001。
+  只有 1 家 provider → C400001；未知单元 → A020001（与 unit.py 同域统一）；缺 question → C400001。
 - 零 DDL：全部流程后库对象仍为 16。
 
 全部使用 fake adapter（monkeypatch `registry.build_adapter`），不发真实网络请求。
@@ -305,13 +305,15 @@ def test_auto_cross_check_single_provider_rejected(
 
 
 def test_auto_cross_check_unknown_unit(client, csrf_headers):
+    # 同域「单元不存在」统一为 A020001（与 /units/{uid}/three-questions、
+    # /units/{uid}、providers.py 一致）；此前此处借用 C400001 造成同义两码（R-02）。
     pid = _project(client, csrf_headers)
     r = client.post(
         "/api/v1/units/no-such-unit/answers/cross-check/auto",
         headers=csrf_headers,
         json={"question": "问题"},
     )
-    assert r.json()["code"] == "C400001", r.text
+    assert r.json()["code"] == "A020001", r.text
     assert db.query(pid, "SELECT count(*) c FROM session")[0]["c"] == 0
     assert db.query(pid, "SELECT count(*) c FROM llm_call")[0]["c"] == 0
 
