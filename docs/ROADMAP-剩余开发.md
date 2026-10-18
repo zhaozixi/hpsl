@@ -37,9 +37,9 @@
 | E-02 | `serve()` / WAL checkpoint / FTS 边界 | ✅ 部分完成（M31：checkpoint/close_all/检索边界；`serve()` 仍靠 CLI 间接覆盖） |
 | E-03 | 前端行为测试 | ◐ 仅 `node --check` 语法校验；无 DOM/交互执行 |
 | E-04 | 环境与依赖 | ❌ 受阻：vendor python 无法作为 venv base（103），`pipx install .` 未实测 |
-| E-05 | 知识库页面 | ✅ 已完成（M31：`/knowledge` 挂载/检索/删除 + 导航） |
+| E-05 | 知识库页面 | ✅ 已完成（M31：`/knowledge` 挂载/检索/删除 + 导航；**增量索引**按 mtime/size，`force` 可全量） |
 | E-06 | 衰减页面化 | ✅ 已完成（M31：卡片页显示衰减后状态与天数） |
-| E-07 | 周盘点增强 | ✅ 已完成（M31：推迟到下周 / 前置说明 / 一次提交，存 `gap.context`，零 DDL） |
+| E-07 | 周盘点增强 | ✅ 已完成（M31：推迟到下周 / 前置说明 / 取消推迟 / 一次提交，存 `gap.context`，零 DDL） |
 | E-08 | 真实 keyring / Anthropic key | 仅 fake/注入验证 |
 | E-09 | 文档一致性 | REF-2 保留历史描述行；delivery 按 CHG 维护 |
 

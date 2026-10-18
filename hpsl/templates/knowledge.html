@@ -22,7 +22,8 @@
         <input class="input" type="text" name="path" required
                placeholder="例：D:\notes\python"></label>
     </p>
-    <p><button class="btn btn-primary" type="submit">建索引</button></p>
+    <p><label><input type="checkbox" name="force" value="1"> 强制全量重建（默认只重建改动过的文件）</label></p>
+    <p><button class="btn btn-primary" type="submit">建索引 / 更新索引</button></p>
   </form>
   <div id="index-result"></div>
 </section>

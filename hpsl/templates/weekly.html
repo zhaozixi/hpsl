@@ -131,6 +131,9 @@
       {{ gap_badge(g.level) }} <b>{{ g.text }}</b>
       <small class="text-muted">· {{ g.unit_title or g.unit_id or "—" }} · 推迟到 {{ g.defer_until }}
         {% if g.prereq %}· 前置：{{ g.prereq }}{% endif %}</small>
+      <button type="button" class="btn btn-sm"
+              hx-post="/api/v1/gaps/{{ g.id }}/undefer"
+              hx-target="#batch-result" hx-swap="innerHTML">取消推迟</button>
     </li>
     {% endfor %}
   </ul>

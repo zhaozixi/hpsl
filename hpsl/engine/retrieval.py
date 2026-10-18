@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .. import db
+from .. import config as _config
 from ..common.errors import BizError
 
 # ---------------------------------------------------------------------------
@@ -247,22 +248,74 @@ def _collect_chunks(root: Path) -> tuple[int, list[tuple[str, str]]]:
 # ---------------------------------------------------------------------------
 # chunk_fts 独立写入入口（写锁 + 单事务）
 # ---------------------------------------------------------------------------
-def _replace_fts(pid: str, source_id: str, rows: list[tuple[str, str]]) -> None:
-    """写锁内替换某 source 的全部 FTS 行（DELETE 旧行 + 批量 INSERT 新行，单事务）。
+# ---------------------------------------------------------------------------
+# 增量索引状态（文件级 sidecar，零 DDL；与 graph_layout.json 同构）
+# ---------------------------------------------------------------------------
+def _state_path(pid: str) -> Path:
+    return _config.project_dir(pid) / "source_index.json"
 
-    `chunk_fts` 为检索专用虚表（M0 说明允许独立写入入口）；`source` 行已由 `db.write` 落库，
-    本事务只维护检索索引，不触碰任何业务表，零 DDL。
-    """
+
+def _load_state(pid: str) -> dict:
+    p = _state_path(pid)
+    if not p.exists():
+        return {"sources": {}}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"sources": {}}
+    if not isinstance(data, dict) or not isinstance(data.get("sources"), dict):
+        return {"sources": {}}
+    return data
+
+
+def _save_state(pid: str, state: dict) -> None:
+    p = _state_path(pid)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(p)
+
+
+def _file_meta(fp: Path) -> tuple[float, int]:
+    st = fp.stat()
+    return round(float(st.st_mtime), 3), int(st.st_size)
+
+
+def _collect_files(root: Path):
+    """产出 (路径, 相对 page, mtime, size)；跳过不可 stat 的文件。"""
+    for fp in _iter_index_files(root):
+        try:
+            rel = fp.relative_to(root).as_posix() or fp.name
+            mtime, size = _file_meta(fp)
+        except (OSError, ValueError):
+            continue
+        yield fp, rel, mtime, size
+
+
+def _apply_fts_changes(
+    pid: str,
+    source_id: str,
+    changed: list[tuple[str, list[str]]],
+    removed: list[str],
+) -> None:
+    """写锁内只替换「变更/删除」的文件对应的 FTS 行（增量，单事务）。"""
     conn = db.get_write_conn(pid)
     with db._write_lock(pid):
         try:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute("DELETE FROM chunk_fts WHERE source_id=?", (source_id,))
-            if rows:
-                conn.executemany(
-                    "INSERT INTO chunk_fts(source_id, page, text) VALUES (?, ?, ?)",
-                    [(source_id, page, text) for page, text in rows],
+            for page in removed:
+                conn.execute(
+                    "DELETE FROM chunk_fts WHERE source_id=? AND page=?", (source_id, page)
                 )
+            for page, chunks in changed:
+                conn.execute(
+                    "DELETE FROM chunk_fts WHERE source_id=? AND page=?", (source_id, page)
+                )
+                if chunks:
+                    conn.executemany(
+                        "INSERT INTO chunk_fts(source_id, page, text) VALUES (?, ?, ?)",
+                        [(source_id, page, text) for text in chunks],
+                    )
             conn.execute("COMMIT")
         except Exception:
             try:
@@ -275,37 +328,80 @@ def _replace_fts(pid: str, source_id: str, rows: list[tuple[str, str]]) -> None:
 # ---------------------------------------------------------------------------
 # 公开 API
 # ---------------------------------------------------------------------------
-def index_source(pid: str, directory: str) -> dict:
-    """索引本地知识库目录（幂等：同一路径复用同一 source 行并整体替换其 FTS 行）。
+def index_source(pid: str, directory: str, *, force: bool = False) -> dict:
+    """索引本地知识库目录（**增量**：仅重建 mtime/size 变化的文件）。
 
     步骤：
-    1. 校验目录存在且为目录（否则 C400001）；仅接受绝对路径。
-    2. 递归读取 `.md/.txt/.markdown`（≤1MB，UTF-8 errors="replace"；不跟随目录外符号链接）。
-    3. 按空行/段落切块（每块 ≤2000 字符），`page` 取文件相对路径（无则 "1"）。
-    4. `db.write(pid, "source", {id,path,kind:"folder",added_at}, "user")`。
-    5. 写锁内 DELETE 该 source 旧 FTS 行并批量 INSERT 新行（单事务）。
+    1. 校验目录（绝对路径、存在、是目录；否则 C400001）。
+    2. 递归收集 `.md/.txt/.markdown`（≤1MB；不跟随目录外符号链接）。
+    3. 与 `HPSL_HOME/projects/{pid}/source_index.json` 中的 (mtime,size) 比对：
+       未变化文件跳过；变化/新增文件重新切块；消失文件删除其 FTS 行（`force=True` 全量重建）。
+    4. `source` 行经 `db.write` 落库（新增才写 added_at）；FTS 变更在写锁单事务内完成。
+    5. 更新 sidecar 状态（文件级，零 DDL）。
 
-    返回 `{source_id, files, chunks}`。
+    返回 `{source_id, files, chunks, files_indexed, files_removed, files_unchanged, incremental}`。
     """
     root = _resolve_directory(directory)
-    files, rows = _collect_chunks(root)
-
     stored_path = str(root)
-    existing = db.query(pid, "SELECT id FROM source WHERE path=?", (stored_path,))
+
+    existing = db.query(pid, "SELECT id, added_at FROM source WHERE path=?", (stored_path,))
     source_id = existing[0]["id"] if existing else uuid.uuid4().hex
+    added_at = existing[0]["added_at"] if existing else db._now_utc()
     db.write(
         pid,
         "source",
-        {
-            "id": source_id,
-            "path": stored_path,
-            "kind": "folder",
-            "added_at": db._now_utc(),
-        },
+        {"id": source_id, "path": stored_path, "kind": "folder", "added_at": added_at},
         "user",
     )
-    _replace_fts(pid, source_id, rows)
-    return {"source_id": source_id, "files": files, "chunks": len(rows)}
+
+    state = _load_state(pid)
+    prev = (state.get("sources", {}).get(source_id) or {}).get("files") or {}
+    current: dict[str, dict] = {}
+    changed: list[tuple[str, list[str]]] = []
+    unchanged = 0
+
+    for fp, rel, mtime, size in _collect_files(root):
+        meta = prev.get(rel)
+        if (
+            not force
+            and isinstance(meta, dict)
+            and meta.get("mtime") == mtime
+            and meta.get("size") == size
+        ):
+            current[rel] = {"mtime": mtime, "size": size, "chunks": int(meta.get("chunks", 0))}
+            unchanged += 1
+            continue
+        try:
+            text = fp.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            # 单文件读取失败：保留旧索引（若存在），不误删
+            if isinstance(meta, dict):
+                current[rel] = {
+                    "mtime": meta.get("mtime", mtime),
+                    "size": meta.get("size", size),
+                    "chunks": int(meta.get("chunks", 0)),
+                }
+            continue
+        chunks = _chunk_text(text)
+        current[rel] = {"mtime": mtime, "size": size, "chunks": len(chunks)}
+        changed.append((rel, chunks))
+
+    removed = [rel for rel in prev if rel not in current]
+    if changed or removed:
+        _apply_fts_changes(pid, source_id, changed, removed)
+
+    state.setdefault("sources", {})[source_id] = {"root": stored_path, "files": current}
+    _save_state(pid, state)
+
+    return {
+        "source_id": source_id,
+        "files": len(current),
+        "chunks": sum(int(v.get("chunks", 0)) for v in current.values()),
+        "files_indexed": len(changed),
+        "files_removed": len(removed),
+        "files_unchanged": unchanged,
+        "incremental": not force,
+    }
 
 
 def search(pid: str, query: str, limit: int = DEFAULT_LIMIT) -> list[dict]:
@@ -439,4 +535,12 @@ def delete_source(pid: str, source_id: str) -> dict:
             except sqlite3.OperationalError:
                 pass
             raise
+    # 清理 sidecar 状态（失败不影响删除结果）
+    try:
+        state = _load_state(pid)
+        if sid in (state.get("sources") or {}):
+            state["sources"].pop(sid, None)
+            _save_state(pid, state)
+    except OSError:
+        pass
     return {"source_id": sid, "deleted": True, "chunks": int(chunks)}

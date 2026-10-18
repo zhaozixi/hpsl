@@ -143,3 +143,35 @@ def test_zero_ddl_after_weekly(client, csrf_headers):
         json={"items": [{"id": "g1", "status": "已补", "defer_days": 3}]},
     )
     assert db.count_user_objects(pid) == 16
+
+
+def test_undefer_clears_defer_and_returns_to_list(client, csrf_headers):
+    pid = _project(client, csrf_headers)
+    _gap(pid, text="推迟后又取消")
+    client.post(
+        "/api/v1/gaps/weekly-batch",
+        headers=csrf_headers,
+        json={"items": [{"id": "g1", "defer_days": 7}]},
+    )
+    r = client.post("/api/v1/gaps/g1/undefer", headers=csrf_headers)
+    assert r.json()["code"] == "0", r.text
+    assert r.json()["data"]["cleared"] is True
+    assert "defer_until" not in _ctx(pid)
+
+    page = client.get("/weekly")
+    assert "推迟后又取消" in page.text
+    assert 'id="weekly-gap-table"' in page.text
+
+
+def test_undefer_missing_gap(client, csrf_headers):
+    _project(client, csrf_headers)
+    r = client.post("/api/v1/gaps/nope/undefer", headers=csrf_headers)
+    assert r.json()["code"] == "C400001", r.text
+
+
+def test_undefer_is_idempotent(client, csrf_headers):
+    pid = _project(client, csrf_headers)
+    _gap(pid)
+    r = client.post("/api/v1/gaps/g1/undefer", headers=csrf_headers)
+    assert r.json()["code"] == "0"
+    assert r.json()["data"]["cleared"] is False

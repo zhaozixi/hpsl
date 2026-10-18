@@ -68,10 +68,12 @@ async def create_source_api(req: Request):
     path = body.get("path")
     if not isinstance(path, str) or not path.strip():
         raise BizError("C400001", msg="path 不能为空")
-    result = retrieval.index_source(_require_pid(), path)
+    force = str(body.get("force", "")).lower() in ("1", "true", "yes", "on")
+    result = retrieval.index_source(_require_pid(), path, force=force)
     if _is_htmx(req):
         return HTMLResponse(
-            f"<p class='ok'>已索引 {result.get('files', 0)} 个文件、{result.get('chunks', 0)} 个片段</p>",
+            f"<p class='ok'>已索引 {result.get('files_indexed', 0)} 个变更文件、"
+            f"删除 {result.get('files_removed', 0)} 个、共 {result.get('chunks', 0)} 个片段</p>",
             headers={"HX-Refresh": "true"},
         )
     return ok(result)

@@ -351,6 +351,35 @@ async def _parse_weekly_items(req: Request) -> list[dict]:
     return _weekly_form_items(form)
 
 
+@api_router.post("/gaps/{gid}/undefer", dependencies=[Depends(write_security)])
+def gaps_undefer_api(gid: str, req: Request):
+    """取消「下周再看」：清除 gap.context.defer_until（幂等；不存在 → C400001）。"""
+    pid = _require_pid()
+    if not isinstance(gid, str) or not gid.strip():
+        raise BizError("C400001", msg="缺口 id 不能为空")
+    gid = gid.strip()
+    rows = db.query(pid, "SELECT context FROM gap WHERE id=?", (gid,))
+    if not rows:
+        raise BizError("C400001", msg=f"缺口不存在：{gid}")
+    ctx = _context_dict(rows[0].get("context"))
+    had = ctx.pop("defer_until", None) is not None
+    db.write(
+        pid,
+        "gap",
+        {
+            "id": gid,
+            "context": json.dumps(ctx, ensure_ascii=False),
+            "updated_at": _now_utc(),
+        },
+        "user",
+    )
+    if _is_htmx(req):
+        return HTMLResponse(
+            "<p class='ok'>已取消推迟，缺口回到本周清单</p>", headers={"HX-Refresh": "true"}
+        )
+    return ok({"id": gid, "cleared": had})
+
+
 @api_router.post("/gaps/weekly-batch", dependencies=[Depends(write_security)])
 async def gaps_weekly_batch_api(req: Request):
     """周盘点批量提交：状态 + 推迟天数 + 前置说明，逐条 db.write（审计可撤销）。
