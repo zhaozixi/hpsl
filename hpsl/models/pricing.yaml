@@ -9,6 +9,11 @@
 #                   输出            8 元/M = 0.008 元/K → 0.0011111 USD/K
 #   deepseek-v4-pro 输入            9 元/M = 0.009 元/K → 0.00125   USD/K
 #                   输出           27 元/M = 0.027 元/K → 0.00375   USD/K
+#
+# 智谱（https://docs.bigmodel.cn/cn/guide/start/pricing）：
+#   GLM-5.3-Flash 输入 0.8 元/M → 0.0001111 USD/K；输出 2.8 元/M → 0.0003889 USD/K
+# 千问（https://www.qianwenai.com/models/qwen3.8-flash）：
+#   Qwen3.8-Flash 输入 0.8 元/M → 0.0001111 USD/K；输出 2.7 元/M → 0.0003750 USD/K
 
 currency: USD
 
@@ -22,6 +27,12 @@ models:
   deepseek-v4-pro:
     in_per_1k: 0.00125
     out_per_1k: 0.00375
+  glm-5.3-flash:
+    in_per_1k: 0.0001111
+    out_per_1k: 0.0003889
+  qwen3.8-flash:
+    in_per_1k: 0.0001111
+    out_per_1k: 0.000375
   deepseek-chat:
     in_per_1k: 0.0001
     out_per_1k: 0.0002

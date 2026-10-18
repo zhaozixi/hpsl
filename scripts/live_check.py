@@ -49,6 +49,10 @@ def main() -> int:
     parser.add_argument("--role", default="clerk")
     parser.add_argument("--text", default="测试：请用一句话说明 JSON 的用途。")
     parser.add_argument("--stream", action="store_true", help="额外验证 SSE 流式接口")
+    parser.add_argument("--image", default="", help="多模态：图片 URL（走 /providers/{name}/chat）")
+    parser.add_argument(
+        "--image-file", default="", help="多模态：本地图片路径（自动转 data URI）"
+    )
     args = parser.parse_args()
 
     key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("HPSL_LIVE_KEY")
@@ -107,6 +111,46 @@ def main() -> int:
             summary["stream_deltas"] = sse.count('"delta"')
             summary["stream_done"] = '"done": true' in sse
             summary["stream_cost_head"] = sse[-260:]
+        if args.image or args.image_file:
+            image_url = args.image
+            if args.image_file:
+                import base64
+                from pathlib import Path as _Path
+
+                p = _Path(args.image_file)
+                mime = {
+                    ".png": "image/png",
+                    ".jpg": "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".webp": "image/webp",
+                }.get(p.suffix.lower(), "application/octet-stream")
+                image_url = f"data:{mime};base64,{base64.b64encode(p.read_bytes()).decode()}"
+            mm = client.post(
+                f"/api/v1/providers/{args.provider}/chat",
+                headers=headers,
+                json={
+                    "model": args.model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "image_url", "image_url": {"url": image_url}},
+                                {"type": "text", "text": "用一句话描述这张图。"},
+                            ],
+                        }
+                    ],
+                },
+            )
+            body = mm.json()
+            data = body.get("data") or {}
+            summary["multimodal"] = {
+                "code": body.get("code"),
+                "msg": body.get("msg"),
+                "text_head": (data.get("text") or "")[:160],
+                "tokens_in": data.get("tokens_in"),
+                "tokens_out": data.get("tokens_out"),
+                "cost_usd": data.get("cost_usd"),
+            }
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         ok = bool(result["text"]) and summary["llm_calls"] == 1 and summary["turns"] == 2
         return 0 if ok else 1

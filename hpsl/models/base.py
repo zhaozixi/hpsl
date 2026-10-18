@@ -19,10 +19,15 @@ from ..common.errors import BizError
 
 @dataclass(frozen=True)
 class Msg:
-    """单条对话消息。role ∈ {system, user, assistant}。"""
+    """单条对话消息。role ∈ {system, user, assistant}。
+
+    content 为 str（纯文本）或 OpenAI 多模态 content 数组
+    （`[{"type":"text",...},{"type":"image_url","image_url":{"url":...}}]`），
+    适配器原样透传；角色调用/上下文组装仍只产生字符串。
+    """
 
     role: str
-    content: str
+    content: Any
 
 
 @dataclass(frozen=True)

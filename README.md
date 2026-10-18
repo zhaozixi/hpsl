@@ -45,7 +45,7 @@ export HPSL_MASTER_PASSPHRASE="换成一个足够长的口令"      # bash
 hpsl serve
 # 浏览器打开 http://127.0.0.1:8765
 
-# 运行全量测试（M0–M31，约 556 例，含零 DDL 守护）
+# 运行全量测试（M0–M32，约 563 例，含零 DDL 守护）
 pytest -q
 ```
 
@@ -100,3 +100,4 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 治理增强：难度建议、验证衰减、周盘点批量裁决（M30）
 - 平台：CSRF 签名、启动口令提示、Anthropic SSE 流式、可访问性与 graph 事件委托（M30）
 - 知识库页面与衰减展示：`/knowledge` 挂载/检索/删除；卡片页显示衰减后状态（M31）
+- 新模型：智谱 GLM-5.3-Flash、千问 Qwen3.8-Flash（含图片 content 数组透传，M32）

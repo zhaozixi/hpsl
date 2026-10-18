@@ -131,14 +131,30 @@ class OpenAICompatAdapter:
             try:
                 resp = self._post(url, headers=headers, json=body, timeout=self.timeout)
                 status = getattr(resp, "status_code", 200)
-                if status >= 500 or status == 429:
-                    last_exc = RuntimeError(f"上游返回 {status}")
-                    if attempt < self.max_retries:
-                        time.sleep(self._backoff(attempt))
-                        continue
+                if status >= 400:
+                    if status == 429 or status >= 500:
+                        last_exc = RuntimeError(f"上游返回 {status}")
+                        if attempt < self.max_retries:
+                            time.sleep(self._backoff(attempt))
+                            continue
+                        raise BizError(
+                            ERR_PROVIDER_EXHAUSTED,
+                            msg=f"Provider {self._provider} 调用失败（重试耗尽，末次 {status}）",
+                        )
+                    # 其它 4xx（参数/图片格式/鉴权等）：带上上游 error，不要误报"结构异常"
+                    detail = ""
+                    try:
+                        payload = resp.json()
+                        err = payload.get("error") if isinstance(payload, dict) else None
+                        if isinstance(err, dict):
+                            detail = str(err.get("message") or err.get("code") or "")
+                        elif err:
+                            detail = str(err)
+                    except Exception:
+                        detail = (getattr(resp, "text", "") or "")[:200]
                     raise BizError(
                         ERR_PROVIDER_EXHAUSTED,
-                        msg=f"Provider {self._provider} 调用失败（重试耗尽，末次 {status}）",
+                        msg=f"Provider {self._provider} 返回 {status}：{detail or '请求被拒绝'}",
                     )
                 data = resp.json()
                 content, finish = self._extract(data)

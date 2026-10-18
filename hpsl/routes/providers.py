@@ -76,8 +76,15 @@ def _messages(body: dict) -> list[Msg]:
         content = item.get("content")
         if role not in ("system", "user", "assistant"):
             raise BizError("C400001", msg="role 仅支持 system/user/assistant")
-        if not isinstance(content, str):
-            raise BizError("C400001", msg="content 需为字符串")
+        if isinstance(content, str):
+            pass
+        elif isinstance(content, list) and content and all(
+            isinstance(part, dict) and isinstance(part.get("type"), str) for part in content
+        ):
+            # 多模态：原样透传给 OpenAI 兼容端点（image_url / text 等）
+            pass
+        else:
+            raise BizError("C400001", msg="content 需为字符串或非空的多模态数组")
         out.append(Msg(role, content))
     return out
 
@@ -107,6 +114,25 @@ def _append_turns(pid: str, session_id: str, user_text: str, reply: Reply, provi
     )
 
 
+def _turn_text(content) -> str:
+    """把消息内容转成可落库的文本：多模态数组 → 文本 + 图片 URL 摘要。"""
+    if isinstance(content, str):
+        return content
+    parts: list[str] = []
+    for part in content or []:
+        if not isinstance(part, dict):
+            continue
+        kind = part.get("type")
+        if kind == "text":
+            parts.append(str(part.get("text") or ""))
+        elif kind == "image_url":
+            url = (part.get("image_url") or {}).get("url") if isinstance(part.get("image_url"), dict) else None
+            parts.append(f"[图片] {url or ''}".strip())
+        else:
+            parts.append(f"[{kind}]")
+    return "\n".join(p for p in parts if p)
+
+
 def _sse(payload: dict) -> str:
     return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
 
@@ -126,7 +152,7 @@ async def chat_api(req: Request, name: str):
     adapter = registry.build_adapter(model_id)
     reply = adapter.complete(msgs, json_schema=body.get("json_schema"))
     cost_vo = record_call("chat", reply, session_id, unit_id)
-    _append_turns(pid, session_id, msgs[-1].content, reply, name)
+    _append_turns(pid, session_id, _turn_text(msgs[-1].content), reply, name)
     return ok(
         {
             "text": reply.text,
@@ -158,7 +184,7 @@ async def chat_stream_api(req: Request, name: str):
         raise BizError("C429001", msg="模型调用过于频繁（每会话 10 次/分钟），请稍后再试")
 
     adapter = registry.build_adapter(model_id)
-    user_text = msgs[-1].content
+    user_text = _turn_text(msgs[-1].content)
 
     def stream_fallback():
         """不支持流式的适配器：一次性推送完整回答（仍走 SSE 协议）。"""
