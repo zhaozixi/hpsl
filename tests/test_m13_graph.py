@@ -77,7 +77,8 @@ def test_graph_existing_contract_unchanged(client, csrf_headers):
     assert "概念甲" in r.text
     assert "prereq" in r.text
     assert "概念节点（2）" in r.text
-    assert "selectNode('c1')" in r.text
+    assert 'data-id="c1"' in r.text
+    assert "selectNode" in r.text
     assert "resetView" in r.text
     assert 'id="concept-graph"' in r.text
     assert 'id="viewport"' in r.text

@@ -192,7 +192,8 @@ def test_graph_interaction_hooks(client, csrf_headers):
     assert "const EDGES" in r.text
     assert "const CONCEPTS" in r.text
     # 节点点击处理器已绑定
-    assert "selectNode('c1')" in r.text
+    assert 'data-id="c1"' in r.text
+    assert "selectNode" in r.text
     # 边类型标注可见
     assert "prereq" in r.text
     # 既有渲染契约仍成立

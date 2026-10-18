@@ -8,6 +8,9 @@
   重试逐次记账（on_call）；耗尽 → A040001。
 - 安全：x-api-key 由 key_resolver() 提供；密钥绝不进入请求体 / 日志 / VOC。
 - 测试性：key_resolver 与底层 _post 均可注入；backoff 可注入为 0。
+- 真流式（P2-10）：`stream_complete()` 走 `POST /messages` + `stream=true` 的 Messages SSE，
+  逐行解析 `data: {...}`；文本增量与 usage 分别以 `{"delta": ...}` / `{"usage": ...}` 产出。
+  结构化模式（json_schema）在流式下仍按 tool-use 请求，但本方法只处理文本 delta。
 
 纪律（冻结）：仅依赖 models.base / common.errors；不引入 ORM。
 """
@@ -22,6 +25,22 @@ import httpx
 
 from ..common.errors import BizError
 from .base import ERR_KEY_MISSING, ERR_PROVIDER_EXHAUSTED, ERR_STRUCTURED, Msg, ProviderAdapter, Reply, _parse_structured
+
+
+def _merge_usage(acc: dict, raw: object) -> bool:
+    """把 Anthropic usage 的 input/output_tokens 归一化为 prompt/completion_tokens。
+
+    返回是否发生了有效合并（供调用方决定是否产出 usage 事件）。
+    """
+    if not isinstance(raw, dict):
+        return False
+    changed = False
+    for src, dst in (("input_tokens", "prompt_tokens"), ("output_tokens", "completion_tokens")):
+        val = raw.get(src)
+        if isinstance(val, int) and not isinstance(val, bool):
+            acc[dst] = val
+            changed = True
+    return changed
 
 
 def _default_key_resolver(provider: str) -> Callable[[], str]:
@@ -50,6 +69,7 @@ class AnthropicAdapter:
         backoff: Optional[Callable[[int], float]] = None,
         on_call: Optional[Callable[[dict], None]] = None,
         _post: Optional[Callable[..., "httpx.Response"]] = None,
+        _stream: Optional[Callable[..., object]] = None,
     ):
         self.name = name
         self.base_url = base_url.rstrip("/")
@@ -62,6 +82,8 @@ class AnthropicAdapter:
         self._on_call = on_call
         self._key_resolver = key_resolver or _default_key_resolver(self._provider)
         self._post = _post or (lambda *args, **kw: httpx.post(*args, **kw))
+        # 流式：httpx.stream 返回上下文管理器；测试可注入 fake
+        self._stream = _stream or (lambda *args, **kw: httpx.stream(*args, **kw))
 
     def _build_headers(self) -> dict:
         key = self._key_resolver()
@@ -171,3 +193,70 @@ class AnthropicAdapter:
             ERR_PROVIDER_EXHAUSTED,
             msg=f"Provider {self._provider} 调用失败（重试耗尽）：{last_exc}",
         )
+
+    # -- 对外：流式补全（P2-10：Messages API 真 SSE） ----------------------
+    def stream_complete(self, messages: list[Msg], *, json_schema: Optional[dict] = None):
+        """流式补全（Anthropic Messages SSE）。
+
+        产出事件 dict：
+        - `{"delta": "<文本增量>"}`：来自 `content_block_delta.delta.text`；
+        - `{"usage": {...}}`：来自 `message_start.message.usage` 与 `message_delta.usage`，
+          合并后统一为 `prompt_tokens` / `completion_tokens`（两者都到达后为完整值）。
+        调用方负责拼接 delta 并在结束时用累计文本 + usage 记账。
+
+        上游 4xx/5xx → A040001；SSE 数据块 JSON 解析失败 → A040004；
+        网络异常 → A040001（不重试，由调用方决定是否重开流）。
+        """
+        url = f"{self.base_url}/messages"
+        headers = self._build_headers()
+        body = self._build_body(messages, json_schema=json_schema)
+        body["stream"] = True
+
+        usage: dict = {}
+        try:
+            with self._stream(
+                "POST", url, headers=headers, json=body, timeout=self.timeout
+            ) as resp:
+                status = getattr(resp, "status_code", 200)
+                if status >= 400:
+                    raise BizError(
+                        ERR_PROVIDER_EXHAUSTED,
+                        msg=f"Provider {self._provider} 流式调用失败（HTTP {status}）",
+                    )
+                for raw_line in resp.iter_lines():
+                    line = (raw_line or "").strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if not payload:
+                        continue
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                    except (json.JSONDecodeError, TypeError) as exc:
+                        raise BizError(ERR_STRUCTURED, msg=f"流式响应解析失败：{exc}") from exc
+                    if not isinstance(chunk, dict):
+                        raise BizError(ERR_STRUCTURED, msg="流式响应解析失败：数据块非对象")
+
+                    etype = chunk.get("type")
+                    if etype == "message_start":
+                        message = chunk.get("message")
+                        if isinstance(message, dict) and _merge_usage(
+                            usage, message.get("usage")
+                        ):
+                            yield {"usage": dict(usage)}
+                    elif etype == "message_delta":
+                        if _merge_usage(usage, chunk.get("usage")):
+                            yield {"usage": dict(usage)}
+                    elif etype == "content_block_delta":
+                        delta = chunk.get("delta")
+                        text = delta.get("text") if isinstance(delta, dict) else None
+                        if isinstance(text, str) and text:
+                            yield {"delta": text}
+        except (httpx.HTTPError, httpx.TransportError) as exc:
+            raise BizError(
+                ERR_PROVIDER_EXHAUSTED,
+                msg=f"Provider {self._provider} 流式调用失败：{exc}",
+            ) from exc
+        return

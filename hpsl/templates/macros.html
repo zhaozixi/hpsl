@@ -71,9 +71,11 @@
 </div>
 {% endmacro %}
 
-{# —— 行内术语：给某个词加一个「?」小角标，鼠标悬停看通俗解释 —— #}
+{# —— 行内术语：给某个词加一个「?」小角标，鼠标悬停看通俗解释。
+    tabindex="0" 让术语可键盘聚焦，app.js 的 focus 事件即会弹出解释（无障碍）。
+    role="note" 声明这是一条附注。 #}
 {% macro tip(text, explain) %}
-<span class="tip" data-tip="{{ explain }}">{{ text }}<span class="tip-mark" aria-hidden="true">?</span></span>
+<span class="tip" data-tip="{{ explain }}" tabindex="0" role="note">{{ text }}<span class="tip-mark" aria-hidden="true">?</span></span>
 {% endmacro %}
 
 {# —— 字段行：把数据库字段名换成中文标签，并附说明 —— #}

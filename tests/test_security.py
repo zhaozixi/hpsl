@@ -125,4 +125,4 @@ def test_security_helpers_unit():
     assert security.check_origin("http://attacker.com") is False
     assert security.check_origin("") is False
     tok = security.new_csrf_token()
-    assert len(tok) == 64  # 32B hex
+    assert security.verify_csrf_token(tok) is True  # P2-09：`nonce.sig` 签名 token

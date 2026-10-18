@@ -12,8 +12,11 @@
 from __future__ import annotations
 
 import argparse
+import getpass
+import os
 import sys
 from pathlib import Path
+from typing import Callable
 
 try:
     from fastapi import FastAPI, Request
@@ -41,6 +44,9 @@ from .routes import stats as stats_routes
 from .routes import ops as ops_routes
 from .routes import judge as judge_routes
 from .routes import providers as providers_routes
+from .routes import retrieval as retrieval_routes
+from .routes import multi as multi_routes
+from .routes import insight as insight_routes
 
 if FastAPI is not None:
     # 生产形态关闭交互文档与 OpenAPI（安全设计 §4.2.2 / T-15）；无对外 API 消费方
@@ -73,6 +79,9 @@ if FastAPI is not None:
     app.include_router(ops_routes.api_router)
     app.include_router(judge_routes.api_router)
     app.include_router(providers_routes.api_router)
+    app.include_router(retrieval_routes.api_router)
+    app.include_router(multi_routes.api_router)
+    app.include_router(insight_routes.api_router)
     app.include_router(projects_routes.page_router)
     app.include_router(ledger_routes.page_router)
     app.include_router(review_routes.page_router)
@@ -83,6 +92,7 @@ if FastAPI is not None:
     app.include_router(wizard_routes.page_router)
     app.include_router(export_routes.page_router)
     app.include_router(stats_routes.page_router)
+    app.include_router(insight_routes.page_router)
 
     # 静态资源（HTMX / app.js / app.css）；目录不存在时跳过挂载，避免无前端时启动失败
     _static_dir = Path(__file__).resolve().parent / "static"
@@ -127,10 +137,66 @@ def _writable(path: Path) -> bool:
         return False
 
 
+def _ensure_passphrase_interactive(
+    *,
+    isatty: Callable[[], bool] | None = None,
+    getpass_fn: Callable[[str], str] | None = None,
+    lock_state_fn: Callable[[], dict] | None = None,
+) -> bool:
+    """P2-08：启动时按需交互式询问密钥库口令（`hpsl serve` 专用）。
+
+    行为：
+    - 仅当 `keystore.lock_state()["locked"]` 为真才介入（keyring 可用 / 已设口令 → 直接返回）；
+    - `HPSL_NO_PASSPHRASE_PROMPT=1` → 完全静默跳过（供 systemd / 无头运维显式关闭）；
+    - 标准输入是 TTY → 用 `getpass` 询问，非空口令写入 `HPSL_MASTER_PASSPHRASE`
+      （只驻留进程内存、绝不落盘）；空输入 / EOF / Ctrl-C 视为跳过；
+    - 非交互（管道 / 守护进程 / 重定向）→ 不询问，向 stderr 打印一行提示。
+
+    返回是否成功设置了口令。`isatty` / `getpass_fn` / `lock_state_fn` 可注入便于单测
+    （默认分别为 `sys.stdin.isatty` / `getpass.getpass` / `keystore.lock_state`）。
+    """
+    from .secrets import keystore
+
+    state = (lock_state_fn or keystore.lock_state)()
+    if not state.get("locked"):
+        return False
+
+    # 显式关闭提示：无头部署不应被 stdin 阻塞，也不应刷屏
+    if os.environ.get("HPSL_NO_PASSPHRASE_PROMPT") == "1":
+        return False
+
+    try:
+        interactive = bool((isatty or sys.stdin.isatty)())
+    except Exception:  # stdin 已关闭 / 非标准流：按非交互处理
+        interactive = False
+
+    if interactive:
+        try:
+            passphrase = (getpass_fn or getpass.getpass)(
+                "HPSL_MASTER_PASSPHRASE（密钥库口令，回车跳过）: "
+            )
+        except (EOFError, KeyboardInterrupt):
+            passphrase = ""
+        if passphrase:
+            os.environ["HPSL_MASTER_PASSPHRASE"] = passphrase
+            return True
+
+    print(
+        "[hpsl] 密钥库未解锁（未检测到系统密钥环且未设口令）："
+        "本次会话将无法保存/读取密钥；请设置 HPSL_MASTER_PASSPHRASE 后重启，"
+        "或配置系统密钥环。",
+        file=sys.stderr,
+    )
+    return False
+
+
 def serve(host: str = "127.0.0.1", port: int | None = None) -> None:
     """启动 uvicorn 单 worker（监听回环地址）；优雅停机（SIGTERM/SIGINT 由 uvicorn 处理）。"""
     if app is None:
         raise RuntimeError("FastAPI 未安装，无法启动 serve；请先 pip install fastapi uvicorn")
+    # P2-08：启动口令（交互式）。必须早于任何 db 操作，避免锁定态下做出误导性读写。
+    _ensure_passphrase_interactive()
+
     import atexit
     import uvicorn
 

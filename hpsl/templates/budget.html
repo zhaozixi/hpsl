@@ -19,7 +19,7 @@
   {% if rows %}
   <div class="table-wrap">
   <table id="budget-table" class="table">
-    <thead><tr><th>会话</th><th>累计(USD)</th><th>上限</th><th>状态</th><th>确认次数</th></tr></thead>
+    <thead><tr><th scope="col">会话</th><th scope="col">累计(USD)</th><th scope="col">上限</th><th scope="col">状态</th><th scope="col">确认次数</th></tr></thead>
     <tbody>
     {% for r in rows %}
     <tr id="budget-{{ r.session.id }}">

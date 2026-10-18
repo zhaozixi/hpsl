@@ -22,35 +22,45 @@
       var isDark = d.classList.toggle('dark');
       try { localStorage.setItem('hpsl-theme', isDark ? 'dark' : 'light'); } catch (e) {}
       var b = document.getElementById('theme-toggle-btn');
-      if (b) { b.textContent = isDark ? '主题：浅色' : '主题：深色'; }
+      if (b) {
+        b.textContent = isDark ? '主题：浅色' : '主题：深色';
+        b.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+      }
     }
     function hpslSyncThemeLabel() {
       var d = document.documentElement;
       var b = document.getElementById('theme-toggle-btn');
-      if (b) { b.textContent = d.classList.contains('dark') ? '主题：浅色' : '主题：深色'; }
+      if (b) {
+        b.textContent = d.classList.contains('dark') ? '主题：浅色' : '主题：深色';
+        b.setAttribute('aria-pressed', d.classList.contains('dark') ? 'true' : 'false');
+      }
     }
+    document.addEventListener('DOMContentLoaded', hpslSyncThemeLabel);
   </script>
 </head>
 <body>
+  {% set path = request.url.path if request is defined and request.url else "" %}
+  <a class="skip-link" href="#main">跳到主要内容</a>
   <header class="site-header">
     <div class="site-header-inner">
       <a class="brand" href="/" title="HPSL · 你的个人学习管家：帮你把想学会的东西拆成一个个小单元，一步步学、练、考">HPSL 学习管家</a>
-      <nav class="site-nav">
-        <a href="/wizard" title="第一次使用，跟着四步把项目建起来、填上密钥">向导</a>
-        <a href="/unit" title="你正在攻克的一个个知识点（学习单元）">单元</a>
-        <a href="/review" title="到期的内容，回来巩固一下，防止忘了">复测</a>
-        <a href="/cards" title="你学完时写下的要点卡片">卡片</a>
-        <a href="/graph" title="各个知识点之间的关系图">概念图</a>
-        <a href="/stats" title="花费与学习情况的统计图表">分析</a>
-        <a href="/budget" title="看看花了多少、有没有超预算">预算</a>
-        <a href="/settings" title="调整评判标准与阈值等开关">设置</a>
-        <a href="/backup" title="把数据导出备份，防止丢失">备份</a>
+      <nav class="site-nav" aria-label="主导航">
+        <a href="/wizard" title="第一次使用，跟着四步把项目建起来、填上密钥"{% if path.startswith("/wizard") %} aria-current="page"{% endif %}>向导</a>
+        <a href="/unit" title="你正在攻克的一个个知识点（学习单元）"{% if path.startswith("/unit") %} aria-current="page"{% endif %}>单元</a>
+        <a href="/review" title="到期的内容，回来巩固一下，防止忘了"{% if path.startswith("/review") %} aria-current="page"{% endif %}>复测</a>
+        <a href="/cards" title="你学完时写下的要点卡片"{% if path.startswith("/cards") %} aria-current="page"{% endif %}>卡片</a>
+        <a href="/graph" title="各个知识点之间的关系图"{% if path.startswith("/graph") %} aria-current="page"{% endif %}>概念图</a>
+        <a href="/stats" title="花费与学习情况的统计图表"{% if path.startswith("/stats") %} aria-current="page"{% endif %}>分析</a>
+        <a href="/budget" title="看看花了多少、有没有超预算"{% if path.startswith("/budget") %} aria-current="page"{% endif %}>预算</a>
+        <a href="/weekly" title="每周一次：集中处理积压的缺口"{% if path.startswith("/weekly") %} aria-current="page"{% endif %}>周盘点</a>
+        <a href="/settings" title="调整评判标准与阈值等开关"{% if path.startswith("/settings") %} aria-current="page"{% endif %}>设置</a>
+        <a href="/backup" title="把数据导出备份，防止丢失"{% if path.startswith("/backup") %} aria-current="page"{% endif %}>备份</a>
         <a href="/static/help.html" title="看不懂？点这里看操作手册">帮助</a>
-        <button id="theme-toggle-btn" type="button" class="btn btn-sm" onclick="hpslToggleTheme()" title="切换浅色 / 深色背景">主题：深色</button>
+        <button id="theme-toggle-btn" type="button" class="btn btn-sm" onclick="hpslToggleTheme()" aria-pressed="false" title="切换浅色 / 深色背景">主题：深色</button>
       </nav>
     </div>
   </header>
-  <main class="container">{% block content %}{% endblock %}</main>
+  <main id="main" class="container">{% block content %}{% endblock %}</main>
   <footer class="site-footer">HPSL 学习管家 · 帮你把想学会的东西，拆成一个个小单元，一步步学、练、考</footer>
 </body>
 </html>

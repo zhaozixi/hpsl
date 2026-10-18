@@ -45,7 +45,7 @@ export HPSL_MASTER_PASSPHRASE="换成一个足够长的口令"      # bash
 hpsl serve
 # 浏览器打开 http://127.0.0.1:8765
 
-# 运行全量测试（M0–M29，约 456 例，含零 DDL 守护）
+# 运行全量测试（M0–M30，约 515 例，含零 DDL 守护）
 pytest -q
 ```
 
@@ -95,3 +95,7 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 成本与判定：DeepSeek 官方价表、未登记价格提示、自评/确认得分/要点守卫/强行闭环/挑错端点（M29）
 - 直连与流式：`/providers/{name}/chat` 与 SSE `/chat/stream`（M29）
 - 备份与发布：每日快照 + `hpsl restore`、对话记录导出、Apache-2.0 LICENSE、requirements 锁定（M29）
+- 知识库：`source` 挂载 + FTS5 检索（jieba 可选）、空白上下文模式（M30）
+- 多模型：交叉验证、多挑错、评分要点二厂商核对（M30）
+- 治理增强：难度建议、验证衰减、周盘点批量裁决（M30）
+- 平台：CSRF 签名、启动口令提示、Anthropic SSE 流式、可访问性与 graph 事件委托（M30）

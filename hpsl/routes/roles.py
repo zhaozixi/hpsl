@@ -3,6 +3,10 @@
 - `POST /api/v1/roles/{role}/call`：按角色契约组装 → 适配器调用 → 记账（`llm_call`）→ 返回文本。
 - 隔离：上下文只经 `assembler.assemble`（`RoleLLM.build_system_prompt` 内部完成），
   `answer_machine_output` 永不出现在发送给模型的 messages 中。
+- 空白上下文（P2-02 / F14.7）：请求体 `blank_context: true` 时**不读任何账本/单元字段**
+  （不查 unit、不查 concept、不采纳 body.context），context 仅含学习者输入
+  （`learner_input` 及按角色映射的输入字段；answer_machine 仍映射为 `question`），
+  用于检查既有记忆是否造成偏向。`input-preview` 同样支持 `?blank_context=true`。
 - 会话：未给 `session_id` 时自动创建一条 `session`（`unit_id` 可空），满足 `llm_call` 外键。
 - 模型：`registry.pick_default_model()`（环境变量 `HPSL_ROLE_MODEL_<ROLE>` 可覆盖）。
 
@@ -81,19 +85,39 @@ def _role_of(raw: str) -> Role:
         raise BizError("A030001", msg=f"未知角色：{raw!r}")
 
 
+def _as_bool(value) -> bool:
+    """宽容解析布尔开关（JSON true / 表单 "true" / "1" / "on"）。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return False
+
+
 def _context(pid: str, role: Role, unit_id: Optional[str], body: dict) -> dict:
-    """组装修饰前的原始上下文（真实裁剪由 assembler 按 allow 执行）。"""
-    ctx = dict(body.get("context") or {})
-    if unit_id:
-        rows = db.query(pid, "SELECT id, title, difficulty_band FROM unit WHERE id=?", (unit_id,))
-        if not rows:
-            raise BizError("A020001", msg=f"单元 {unit_id} 不存在")
-        ctx.setdefault("unit_title", rows[0]["title"])
-        if rows[0].get("difficulty_band"):
-            ctx.setdefault("difficulty_band", rows[0]["difficulty_band"])
-    if role in _CONCEPT_ROLES:
-        names = [r["name"] for r in db.query(pid, "SELECT name FROM concept ORDER BY name LIMIT 20")]
-        ctx.setdefault("concept_summary", "、".join(names) if names else "（暂无概念）")
+    """组装修饰前的原始上下文（真实裁剪由 assembler 按 allow 执行）。
+
+    `blank_context` 为真时进入空白上下文模式：**不读任何账本/单元字段**
+    （不查 unit / concept，也不采纳调用方传入的 context），只保留学习者输入。
+    """
+    blank = _as_bool(body.get("blank_context"))
+    ctx: dict = {}
+    if not blank:
+        raw_ctx = body.get("context")
+        if isinstance(raw_ctx, dict):
+            ctx.update(raw_ctx)
+        if unit_id:
+            rows = db.query(pid, "SELECT id, title, difficulty_band FROM unit WHERE id=?", (unit_id,))
+            if not rows:
+                raise BizError("A020001", msg=f"单元 {unit_id} 不存在")
+            ctx.setdefault("unit_title", rows[0]["title"])
+            if rows[0].get("difficulty_band"):
+                ctx.setdefault("difficulty_band", rows[0]["difficulty_band"])
+        if role in _CONCEPT_ROLES:
+            names = [r["name"] for r in db.query(pid, "SELECT name FROM concept ORDER BY name LIMIT 20")]
+            ctx.setdefault("concept_summary", "、".join(names) if names else "（暂无概念）")
     learner_input = body.get("learner_input")
     if isinstance(learner_input, str) and learner_input:
         field = _INPUT_FIELD.get(role)
@@ -120,14 +144,26 @@ def role_contracts_api():
 
 
 @api_router.get("/units/{uid}/input-preview", dependencies=[Depends(read_security)])
-def input_preview_api(uid: str, role: str):
+def input_preview_api(
+    uid: str,
+    role: str,
+    blank_context: bool = False,
+    learner_input: str = "",
+):
     """F3.3 输入预览：返回该角色**实际可见**的字段与值（不含 allow 之外的内容）。
 
     只读：不调用模型、不写库。可视化"本次会发给模型的内容"，用于隔离审计。
+    `?blank_context=true` 时预览空白上下文模式（不读 unit/concept，仅学习者输入；
+    可用 `learner_input` 查询参数模拟输入），字段集合仍受角色契约 allow 约束。
     """
     pid = _require_pid()
     target = _role_of(role)
-    ctx = _context(pid, target, uid, {})
+    body: dict = {}
+    if blank_context:
+        body["blank_context"] = True
+    if learner_input:
+        body["learner_input"] = learner_input
+    ctx = _context(pid, target, uid, body)
     return ok(assembler.preview(target, ctx))
 
 
@@ -135,16 +171,21 @@ def input_preview_api(uid: str, role: str):
 async def role_call_api(req: Request, role: str):
     """调用一个角色并记账。
 
-    请求体：`{unit_id?, session_id?, learner_input?, context?}`
+    请求体：`{unit_id?, session_id?, learner_input?, context?, blank_context?}`
+    `blank_context: true` → 空白上下文模式（不读账本/单元字段，context 仅含学习者输入）。
     响应：`{text, provider, model, tokens_in, tokens_out, cost_usd, cumulative_usd,
             cost_status, session_id}`
     """
     pid = _require_pid()
     target = _role_of(role)
     body = await _parse_body(req)
+    blank = _as_bool(body.get("blank_context"))
     unit_id = body.get("unit_id") or None
     if unit_id is not None and not isinstance(unit_id, str):
         raise BizError("C400001", msg="unit_id 须为字符串")
+    # 空白上下文不组装单元字段，但 unit_id 仍会写入 session/llm_call（外键），故仅做存在性校验
+    if unit_id is not None and blank and not db.query(pid, "SELECT id FROM unit WHERE id=?", (unit_id,)):
+        raise BizError("A020001", msg=f"单元 {unit_id} 不存在")
     session_id = body.get("session_id") or None
     if session_id and not db.query(pid, "SELECT id FROM session WHERE id=?", (session_id,)):
         raise BizError("C400001", msg="session_id 不存在")

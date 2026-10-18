@@ -87,3 +87,15 @@
   document.addEventListener('htmx:responseError', function (evt) { toast(messageOf(evt.detail.xhr)); });
   document.addEventListener('htmx:sendError', function () { toast('网络不可达，请检查本地服务是否在运行'); });
 })();
+
+
+// 弹层可关闭（无障碍）：Esc 关闭页面上所有 .modal；配合弹层内的「关闭」按钮。
+(function () {
+  document.addEventListener('keydown', function (evt) {
+    if (evt.key !== 'Escape' && evt.key !== 'Esc') return;
+    var modals = document.querySelectorAll('.modal');
+    for (var i = 0; i < modals.length; i++) {
+      modals[i].remove();
+    }
+  });
+})();

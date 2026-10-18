@@ -269,6 +269,77 @@ def trigger_critic_if_needed(
     return [cid]
 
 
+# ---------------------------------------------------------------------------
+# P2-03 / P2-04：多模型交叉验证 + 多挑错（v1 增量，复用上述同源判定与落账）
+# ---------------------------------------------------------------------------
+def same_source_pairs(model_ids: list[str]) -> list[dict]:
+    """两两同源判定（P2-03 交叉验证矩阵，复用 heterogeneous / same_source）。
+
+    返回输入顺序的组合序列表：`[{"a": 前者, "b": 后者, "same_source": bool}]`。
+    同源（True）表示两模型同厂商 / 谱系相交 / 蒸馏关系，交叉验证的独立性不足；
+    异源（False）才构成有效交叉验证。单模型 / 空列表 → 空列表（无 pair）。
+    """
+    ids = list(model_ids or [])
+    pairs: list[dict] = []
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            pairs.append({"a": a, "b": b, "same_source": same_source(a, b)})
+    return pairs
+
+
+def trigger_critics_multi(
+    pid: str,
+    *,
+    unit_id: str,
+    claim: str,
+    model_ids: list[str],
+    is_keypoint: bool = False,
+    session_id: str | None = None,
+    actor: str = "system",
+    answer_model_id: str | None = None,
+) -> list[dict]:
+    """多模型挑错（P2-04）：对 `model_ids` 中每个模型各写一条 claim_check。
+
+    - 同源判定以 `answer_model_id`（被挑错的答案机）为参照；未提供时无法判定同源，
+      按异源处理（same_source=False），providers.answer 记 None。
+    - 同源行复用 `record_same_source_warning`（BD-03）：agree=NULL + 同源降级 diff 警告；
+      不因多模型而放宽「同源关键卡点不得自动闭环」的既有门控。
+    - 异源行：agree=NULL、claim=原 claim、residual=0（待用户仲裁 / 后续回填）。
+    - 返回 `[{id, model, same_source}]`，顺序与 model_ids 一致；幂等不要求。
+    """
+    created: list[dict] = []
+    for model in model_ids:
+        is_ss = bool(answer_model_id) and same_source(model, answer_model_id)
+        if is_ss:
+            cid = record_same_source_warning(
+                pid,
+                unit_id=unit_id,
+                critic_model_id=model,
+                answer_model_id=answer_model_id,
+                is_keypoint=is_keypoint,
+                session_id=session_id,
+                actor=actor,
+            )
+        else:
+            cid = write_claim_check(
+                pid,
+                claim=claim,
+                unit_id=unit_id,
+                providers={
+                    "critic": model,
+                    "answer": answer_model_id,
+                    "same_source": False,
+                },
+                session_id=session_id,
+                agree=None,
+                diff=None,
+                residual=0,
+                actor=actor,
+            )
+        created.append({"id": cid, "model": model, "same_source": is_ss})
+    return created
+
+
 def count_same_source_keypoint_auto_close(pid: str) -> int:
     """治理计数（AC-5.4）：同源关键卡点「自动闭环」违规次数，v0 恒为 0。
 

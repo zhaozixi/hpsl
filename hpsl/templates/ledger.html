@@ -124,7 +124,7 @@
   {% if audit %}
   <div class="table-wrap">
     <table class="table" id="audit-table">
-      <thead><tr><th>#</th><th>时间</th><th>操作者</th><th>表</th><th>行</th><th>操作</th></tr></thead>
+      <thead><tr><th scope="col">#</th><th scope="col">时间</th><th scope="col">操作者</th><th scope="col">表</th><th scope="col">行</th><th scope="col">操作</th></tr></thead>
       <tbody>
       {% for a in audit %}
         <tr id="audit-{{ a.id }}">

@@ -66,7 +66,7 @@
       </g>
       {% endfor %}
       {% for nd in nodes %}
-      <g class="node" id="node-{{ nd.id }}" data-id="{{ nd.id }}" data-status="{{ nd.verify_status }}" onclick="selectNode('{{ nd.id }}')">
+      <g class="node" id="node-{{ nd.id }}" data-id="{{ nd.id }}" data-status="{{ nd.verify_status }}">
         <circle cx="{{ nd.x }}" cy="{{ nd.y }}" r="7" fill="#9ca3af">
           <title>{{ nd.name }} · {{ nd.verify_status }}</title>
         </circle>
@@ -230,6 +230,13 @@ svg.addEventListener('dblclick', function () { resetView(); });
 // 点击空白处取消选择
 svg.addEventListener('click', function (e) {
   if (e.target === svg && selectedId) { selectedId = null; render(); }
+});
+
+// 节点点击：事件委托（替代内联 onclick，避免模板里拼 JS）。仅当点击落在 .node 上才选中；
+// 空白处点击仍由上面的 svg 处理器取消选择，两者互不冲突。
+vp.addEventListener('click', function (e) {
+  var g = e.target.closest && e.target.closest('.node');
+  if (g) { selectNode(g.getAttribute('data-id')); }
 });
 
 // 悬停提示（M27：改用 textContent 构建，避免概念名/时间里的 HTML 被解释）

@@ -3,7 +3,8 @@
 - Host 白名单：中间件校验 `Host` 头（精确匹配，含端口），非白名单 → 403 C403001（M25 起与
   《安全设计》T-01 对齐；旧 C400003 保留注册但不再使用）。
 - Origin 校验（写）：解析 scheme://netloc 须为回环，否则 → 403 C403001。
-- CSRF 双提交：GET 经中间件下发可读 cookie；写请求须带 `X-CSRF-Token` 且等于 cookie，否则 → 403 C403001。
+- CSRF 双提交（P2-09 签名）：GET 经中间件下发可读 cookie（`nonce.sig`，HMAC 签名）；
+  写请求须带 `X-CSRF-Token` 且等于 cookie，并通过签名校验，否则 → 403 C403001。
 - safe_path：路由层凡涉及 pid/路径访问先解析并校验前缀，越界 → C400002（复用 M0 db.safe_path）。
 - 五维限流：进程内滑动窗口（进程/路由/LLM频次/SSE并发/写频次），越限 → 429 C429001。
 
@@ -13,6 +14,8 @@ C400003 仍在注册表中（向后兼容，历史客户端可识别）。
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import threading
 import time
 import secrets
@@ -85,10 +88,40 @@ def check_origin(origin: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# CSRF 双提交
+# CSRF 双提交（HMAC 签名，P2-09）
+#
+# 旧实现是纯随机值双提交：攻击者若能写 cookie（子域/中间人）即可自造一对
+# 匹配的 cookie/header。现升级为「签名 token」：进程启动时生成 32B 随机密钥，
+# token = `nonce.signature`，服务端校验 HMAC-SHA256(secret, nonce)。
+# - 密钥仅驻留进程内存（不落盘、不下发），重启即失效；
+# - 重启后旧 cookie 通不过校验，GET 中间件会重新签发（见 SecurityMiddleware）；
+# - 双提交仍保留：header 必须与 cookie 相同，再验签（防 cookie 注入 + 防伪造）。
 # ---------------------------------------------------------------------------
+secret = secrets.token_bytes(32)
+
+
+def _csrf_signature(nonce: str) -> str:
+    """HMAC-SHA256(secret, nonce) 的 hex 摘要（64 位小写 hex）。"""
+    return hmac.new(secret, nonce.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def new_csrf_token() -> str:
-    return secrets.token_hex(32)
+    """签发 CSRF token：`nonce.sig`（nonce=16B hex，sig=32B hex）。"""
+    nonce = secrets.token_hex(16)
+    return f"{nonce}.{_csrf_signature(nonce)}"
+
+
+def verify_csrf_token(token: str) -> bool:
+    """校验签名 token：格式必须为 `nonce.sig` 且 HMAC 匹配（常量时间比较）。
+
+    缺失 / 非字符串 / 无 `.` / 空段 / 签名不符 → False（绝不抛异常）。
+    """
+    if not token or not isinstance(token, str):
+        return False
+    nonce, sep, sig = token.partition(".")
+    if not nonce or not sep or not sig:
+        return False
+    return hmac.compare_digest(sig, _csrf_signature(nonce))
 
 
 def new_trace_id() -> str:
@@ -97,9 +130,12 @@ def new_trace_id() -> str:
 
 
 def check_csrf(request) -> bool:
+    """写请求 CSRF：header 与 cookie 双提交一致，且 token 签名有效。"""
     token = request.headers.get(X_CSRF_HEADER)
     cookie = request.cookies.get(CSRF_COOKIE)
-    return bool(token) and bool(cookie) and token == cookie
+    if not token or not cookie or token != cookie:
+        return False
+    return verify_csrf_token(token)
 
 
 # ---------------------------------------------------------------------------
@@ -241,9 +277,13 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         if not check_host(request.headers.get("host", "")):
             return JSONResponse(status_code=403, content=fail("C403001").to_dict())
         response = await call_next(request)
-        # CSRF cookie 下发（GET）：无则种，有则回显；httponly=False 供 JS 双提交
+        # CSRF cookie 下发（GET）：无则种，有则回显；httponly=False 供 JS 双提交。
+        # 旧值签名无效（如进程重启后 secret 变化）→ 重新签发，避免页面停留在
+        # 永远 403 的僵死 token 上。签名 token 由 `nonce.sig` 组成，仍可被 JS 读取。
         if request.method == "GET":
-            cookie = request.cookies.get(CSRF_COOKIE) or new_csrf_token()
+            cookie = request.cookies.get(CSRF_COOKIE)
+            if not cookie or not verify_csrf_token(cookie):
+                cookie = new_csrf_token()
             response.set_cookie(
                 CSRF_COOKIE, cookie, httponly=False, samesite="lax", path="/"
             )

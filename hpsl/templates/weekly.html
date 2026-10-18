@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner, gap_badge %}
+{% block title %}HPSL · 周盘点{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="notice">{{ error }}</div>
+  <p><a href="/">返回首页选择或新建项目</a></p>
+{% else %}
+
+<h1>周盘点 · {{ project.name }}</h1>
+<p><small>目标：{{ project.goal }}</small></p>
+
+{{ help_banner("周盘点：一屏把本周的缺口裁掉",
+   "每周花几分钟，把还没处理的缺口逐条裁决：已经补好就选「已补」，不打算补就选「废弃」，然后点最下方的「批量提交」。提交后页面会自动刷新。") }}
+
+<!-- 难度建议（M9 suggest_band；仅建议，可忽略） -->
+<section>
+  <h2>难度建议</h2>
+  {% if band %}
+  <p>
+    {% if band.band == "up" %}
+      <span class="badge">上调难度</span>
+    {% elif band.band == "down" %}
+      <span class="badge">下调难度</span>
+    {% else %}
+      <span class="badge">保持当前</span>
+    {% endif %}
+    <span class="badge">{{ band.plane }}</span>
+    <span class="text-muted">{{ band.reason }}</span>
+  </p>
+  {% else %}
+    <p class="text-muted">数据积累中，暂不给出升降建议。</p>
+  {% endif %}
+  {% if stale_concepts %}
+    <p class="text-muted">另有 {{ stale_concepts }} 个概念已超过复测间隔未再验证，建议在「复测」页安排回顾。</p>
+  {% endif %}
+</section>
+
+{% if gaps or backlog_l1 %}
+<form id="weekly-batch"
+      hx-post="/api/v1/gaps/status-batch"
+      hx-target="#batch-result"
+      hx-swap="innerHTML">
+
+  <section>
+    <h2>待裁决缺口（二级 / 三级）</h2>
+    <p class="text-muted">这些缺口已确认，还没补上或决定放弃；逐行选择处理方式。</p>
+    {% if gaps %}
+    <div class="table-wrap">
+      <table class="table" id="weekly-gap-table">
+        <thead>
+          <tr><th>单元</th><th>级别</th><th>缺口</th><th>当前状态</th><th>裁决</th></tr>
+        </thead>
+        <tbody>
+        {% for g in gaps %}
+          <tr id="gap-{{ g.id }}">
+            <td>{{ g.unit_title or g.unit_id or "—" }}</td>
+            <td>{{ gap_badge(g.level) }}</td>
+            <td>{{ g.text }}</td>
+            <td>{{ g.status }}</td>
+            <td>
+              <input type="hidden" name="gid" value="{{ g.id }}">
+              <select name="status" aria-label="裁决缺口 {{ g.id }}">
+                <option value="已补" selected>已补</option>
+                <option value="废弃">废弃</option>
+              </select>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="ok">没有待裁决的二级 / 三级缺口。</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>一级缺口积压（{{ backlog_l1|length }} 条）</h2>
+    <p class="text-muted">一级缺口是「轻微」问题，可顺手一起清掉；不打算处理也可标记废弃。</p>
+    {% if backlog_l1 %}
+    <div class="table-wrap">
+      <table class="table" id="weekly-backlog-table">
+        <thead>
+          <tr><th>单元</th><th>级别</th><th>缺口</th><th>当前状态</th><th>裁决</th></tr>
+        </thead>
+        <tbody>
+        {% for g in backlog_l1 %}
+          <tr id="gap-{{ g.id }}">
+            <td>{{ g.unit_title or g.unit_id or "—" }}</td>
+            <td>{{ gap_badge(g.level) }}</td>
+            <td>{{ g.text }}</td>
+            <td>{{ g.status }}</td>
+            <td>
+              <input type="hidden" name="gid" value="{{ g.id }}">
+              <select name="status" aria-label="裁决缺口 {{ g.id }}">
+                <option value="已补" selected>已补</option>
+                <option value="废弃">废弃</option>
+              </select>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="ok">没有一级缺口积压。</p>
+    {% endif %}
+  </section>
+
+  <p>
+    <button type="submit" class="btn">批量提交</button>
+    <span class="text-muted">提交后逐条记账（可撤销），并刷新本页。</span>
+  </p>
+</form>
+<div id="batch-result"></div>
+{% else %}
+  <p class="ok">本周没有待补的缺口，继续保持！</p>
+{% endif %}
+
+<p><a href="/ledger">查看账本总览</a> · <a href="/">返回首页</a></p>
+{% endif %}
+{% endblock %}

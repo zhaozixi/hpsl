@@ -8,8 +8,9 @@
 - plane_signals(counts, cfg) -> list[SoftPromptVO]：四平面阈值比对生成软提示，
   优先级 风险 > 质量 > 节奏 > 进度；每会话提示上限可配；样本不足（分母为 0）不触发升降建议。
 - counts_context(project_id)：返回样本基数（attempts / confirmed_sessions 等），供 plane_signals
-  的样本不足守卫使用（避免「无数据却误报偏低」）。
-- suggest_band：v1 启用（O3，本期待留），不实现。
+  与 suggest_band 的样本不足守卫使用（避免「无数据却误报偏低」）。
+- suggest_band(counts, cfg, ctx) -> dict：按「风险 > 质量 > 节奏 > 进度」优先级裁决难度带
+  （P2-05 / O3），返回 {"band": up|hold|down, "reason", "plane"}；仅为建议，用户可忽略。
 
 纪律（冻结）：全部只读，零 DDL，不依赖 routes/app（保持 headless，便于 M10 接入与测试）；
 复用 db.write 唯一写入入口（本模块无写入）；M0 锁定的 16 库对象不被新增 / 改动。
@@ -362,3 +363,108 @@ def plane_signals(
     if max_prompts is not None and len(prompts) > max_prompts:
         prompts = prompts[:max_prompts]
     return prompts
+
+
+# ---------------------------------------------------------------------------
+# 难度建议（P2-05 / O3）：严格按 风险 > 质量 > 节奏 > 进度 的论文优先级裁决
+# ---------------------------------------------------------------------------
+def _band(band: str, plane: str, reason: str) -> dict:
+    """统一构造建议结果（band 仅 up / hold / down；plane 仅四平面之一）。"""
+    return {"band": band, "reason": reason, "plane": plane}
+
+
+def suggest_band(
+    counts: CountsVO,
+    cfg: ConfigVO,
+    ctx: Optional[dict] = None,
+) -> dict:
+    """难度升降建议（§3.2.M9；P2-05）。
+
+    判定顺序严格按治理平面优先级：**风险 > 质量 > 节奏 > 进度**（论文 §4 冲突裁决表）。
+    每个平面内按「先否决、后建议」排列；首个命中的规则即返回，不做加权打分。
+
+    规则（阈值取自 ConfigVO，默认值见 §9.3）：
+    - 风险：未裁决分歧 > 0 → down（回退一手文献）；跳过产出占比 > skipped_produce_max → down；
+      孤岛率 > 0.2 → down。
+    - 质量：pass_rate > pass_hi → up；pass_rate < pass_lo → down（样本不足守卫）。
+    - 节奏：l1_gap_sessions > 0 → down；zero_gap_ratio > zero_gap_max → up（已确认会话守卫）。
+    - 进度：gap_clear_ratio < 0.5 且 l2_gap_backlog > 0 → hold；否则 hold「处于目标区间」。
+
+    样本不足守卫（§3.2.M9.5）：`ctx` 为 counts_context 返回的样本基数；
+    - 显式传入 ctx 时：attempts == 0 不判质量、confirmed_sessions == 0 不判节奏，避免
+      「无数据却建议降难度」；
+    - ctx 缺省（None）时：质量三项指标全为 0 视为「无数据」（空项目）同样不判质量；
+      其余情况视为调用方已自行确保样本充分（便于纯函数复用）。
+
+    返回 dict：{"band": "up" | "hold" | "down", "reason": 人读文案, "plane": 四平面之一}。
+    纯函数、只读：不写库、不依赖 routes/app，零 DDL。
+    """
+    explicit_ctx = ctx is not None
+    base = ctx or {}
+    if explicit_ctx:
+        attempts_ok = base.get("attempts", 0) > 0
+        sessions_ok = base.get("confirmed_sessions", 0) > 0
+    else:
+        # 无 ctx：把「质量三项全 0」视同空项目（无样本），避免空账本误报 down
+        has_quality_data = (
+            counts.pass_rate != 0.0
+            or counts.review_pass_rate != 0.0
+            or counts.calibration_gap != 0.0
+        )
+        attempts_ok = has_quality_data
+        sessions_ok = True
+
+    # ===== 风险平面（优先级 1，最先判定：先保安全，再谈升降） =====
+    if counts.unresolved_disagreements > 0:
+        return _band(
+            "down",
+            "风险",
+            f"有 {counts.unresolved_disagreements} 处挑错结论尚未裁决，先回退一手文献核对",
+        )
+    if counts.skipped_produce_ratio > cfg.skipped_produce_max:
+        return _band("down", "风险", "存在跳过产出的单元，先补齐单元产出再谈难度")
+    if counts.isolated_node_ratio > 0.2:
+        pct = round(counts.isolated_node_ratio * 100, 1)
+        return _band(
+            "down", "风险", f"孤岛概念占比 {pct}%，超过 20% 安全线，先安排概念整合"
+        )
+
+    # ===== 质量平面（优先级 2） =====
+    if attempts_ok and counts.pass_rate > cfg.pass_hi:
+        pct = round(counts.pass_rate * 100, 1)
+        hi = int(cfg.pass_hi * 100)
+        return _band(
+            "up", "质量", f"通过率 {pct}%，高于目标区间上限 {hi}%，可以上调难度"
+        )
+    if attempts_ok and counts.pass_rate < cfg.pass_lo:
+        pct = round(counts.pass_rate * 100, 1)
+        lo = int(cfg.pass_lo * 100)
+        return _band(
+            "down", "质量", f"通过率 {pct}%，低于目标区间下限 {lo}%，先巩固前置概念"
+        )
+
+    # ===== 节奏平面（优先级 3） =====
+    if counts.l1_gap_sessions > 0:
+        return _band(
+            "down",
+            "节奏",
+            f"有 {counts.l1_gap_sessions} 个会话的一级缺口超过上限"
+            f"（{cfg.l1_gap_limit}），先降低单节强度",
+        )
+    if sessions_ok and counts.zero_gap_ratio > cfg.zero_gap_max:
+        pct = round(counts.zero_gap_ratio * 100, 1)
+        return _band(
+            "up",
+            "节奏",
+            f"零缺口会话占比 {pct}%，说明练习强度可能偏轻，可以上调难度",
+        )
+
+    # ===== 进度平面（优先级 4，最低：仅在前三平面无信号时参考） =====
+    if counts.gap_clear_ratio < 0.5 and counts.l2_gap_backlog > 0:
+        pct = round(counts.gap_clear_ratio * 100, 1)
+        return _band(
+            "hold",
+            "进度",
+            f"缺口清账率 {pct}%，仍有 {counts.l2_gap_backlog} 条二级缺口待补，先清账再谈升降",
+        )
+    return _band("hold", "进度", "处于目标区间")
