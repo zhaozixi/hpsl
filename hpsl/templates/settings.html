@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner, tip %}
+{% block title %}HPSL · 项目设置{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="notice">{{ error }}</div>
+  <p><a href="/">返回首页选择或新建项目</a></p>
+{% else %}
+
+<h1>项目设置 · {{ project.name }}</h1>
+<p><small>目标：{{ project.goal }}</small></p>
+
+{{ help_banner("调整评判标准（一般不用改）",
+   "这里像是「考试多少分算及格」的设定。系统已给好默认值，大多数情况你不用动。每个项目带「?」的词，悬停看通俗解释。留空 = 不改这项。") }}
+
+<form id="settings-form" onsubmit="return saveSettings(event)">
+  <section>
+    <h2>判分与阈值</h2>
+    <p>
+      <label for="pass_threshold">{{ tip("通过阈值", "分数高于它，才算「真正掌握」，这是及格线") }}（数字，可留空不改）<br>
+      <input class="input" type="number" step="0.01" id="pass_threshold" name="pass_threshold" value="{{ '' if config.pass_threshold is none else config.pass_threshold }}"></label>
+    </p>
+    <p>
+      <label for="pass_hi">{{ tip("通过上限", "分数高于它，算「超额掌握、很熟练」") }}（数字，可留空不改）<br>
+      <input class="input" type="number" step="0.01" id="pass_hi" name="pass_hi" value="{{ '' if config.pass_hi is none else config.pass_hi }}"></label>
+    </p>
+    <p>
+      <label for="pass_lo">{{ tip("通过下限", "分数低于它，算「明显没掌握」，需要重来") }}（数字，可留空不改）<br>
+      <input class="input" type="number" step="0.01" id="pass_lo" name="pass_lo" value="{{ '' if config.pass_lo is none else config.pass_lo }}"></label>
+    </p>
+    <p>
+      <label for="l1_gap_limit">{{ tip("一级缺口超限会话数", "允许出现「严重缺口」的会话次数上限，超过会提醒你") }}（整数，可留空不改）<br>
+      <input class="input" type="number" step="1" id="l1_gap_limit" name="l1_gap_limit" value="{{ '' if config.l1_gap_limit is none else config.l1_gap_limit }}"></label>
+    </p>
+    <p>
+      <label for="session_minutes">{{ tip("会话时长", "一次学习大概持续多少分钟，用于节奏统计") }}（整数·分钟，可留空不改）<br>
+      <input class="input" type="number" step="1" id="session_minutes" name="session_minutes" value="{{ '' if config.session_minutes is none else config.session_minutes }}"></label>
+    </p>
+  </section>
+
+  <section>
+    <h2>节奏 / 进度 / 风险</h2>
+    <p>
+      <label for="zero_gap_max">{{ tip("零缺口容忍", "允许「整段没发现任何问题」的比例上限，长期为 0 也未必好") }}（数字，可留空不改）<br>
+      <input class="input" type="number" step="0.01" id="zero_gap_max" name="zero_gap_max" value="{{ '' if config.zero_gap_max is none else config.zero_gap_max }}"></label>
+    </p>
+    <p>
+      <label for="forced_close_max">{{ tip("强行闭环上限", "允许「没走完流程就标记完成」的比例上限") }}（数字，可留空不改）<br>
+      <input class="input" type="number" step="0.01" id="forced_close_max" name="forced_close_max" value="{{ '' if config.forced_close_max is none else config.forced_close_max }}"></label>
+    </p>
+    <p>
+      <label for="skipped_produce_max">{{ tip("跳过产出上限", "允许「只学不练」的比例上限；只学不练印象不深") }}（数字，可留空不改）<br>
+      <input class="input" type="number" step="0.01" id="skipped_produce_max" name="skipped_produce_max" value="{{ '' if config.skipped_produce_max is none else config.skipped_produce_max }}"></label>
+    </p>
+    <p>
+      <label for="budget_cap_usd">{{ tip("预算上限", "这段学习最多花多少美元，到顶会请你确认") }}（数字·美元，可留空不改）<br>
+      <input class="input" type="number" step="0.01" id="budget_cap_usd" name="budget_cap_usd" value="{{ '' if config.budget_cap_usd is none else config.budget_cap_usd }}"></label>
+    </p>
+    <p>
+      <label for="review_intervals">{{ tip("复测间隔", "每隔多少天复习一次，如 2,7,21 表示第 2、7、21 天各复习一遍") }}（用逗号分隔的数字，如 2,7,21，可留空不改）<br>
+      <input class="input" type="text" id="review_intervals" name="review_intervals" value="{{ (config.review_intervals or []) | join(',') }}"></label>
+    </p>
+  </section>
+
+  <p>
+    <button type="submit" class="btn btn-primary">保存设置</button>
+    <span id="save-status" role="status" aria-live="polite"></span>
+  </p>
+  <p><small>留空的字段不会被修改（保持原值或默认值），避免误写为 0 / 空值污染配置。</small></p>
+</form>
+
+<script>
+function saveSettings(e) {
+  e.preventDefault();
+  // 数值字段：留空 = 不改动该字段（避免误写 0 / None）
+  var numericFields = [
+    'pass_threshold', 'pass_hi', 'pass_lo', 'l1_gap_limit', 'session_minutes',
+    'zero_gap_max', 'forced_close_max', 'skipped_produce_max', 'budget_cap_usd'
+  ];
+  var intFields = { 'l1_gap_limit': true, 'session_minutes': true };
+  var body = {};
+  numericFields.forEach(function (id) {
+    var raw = document.getElementById(id).value.trim();
+    if (raw === '') { return; }  // 空值不参与提交
+    var v = Number(raw);
+    if (isNaN(v)) { return; }
+    body[id] = intFields[id] ? Math.trunc(v) : v;
+  });
+  var ri = document.getElementById('review_intervals').value.trim();
+  if (ri !== '') {
+    body.review_intervals = ri.split(',').map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length; })
+      .map(function (s) { return parseInt(s, 10); });
+  }
+  var status = document.getElementById('save-status');
+  status.textContent = '保存中…';
+  var xhr = htmx.ajax('PUT', '/api/v1/projects/{{ project.id }}/config', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (xhr) {
+    xhr.addEventListener('load', function () {
+      status.textContent = (xhr.status >= 200 && xhr.status < 300) ? '已保存' : '保存失败';
+    });
+    xhr.addEventListener('error', function () {
+      status.textContent = '保存失败';
+    });
+  } else {
+    status.textContent = '保存失败';
+  }
+  return false;
+}
+</script>
+
+<p><a href="/ledger">前往账本总览</a> · <a href="/">返回首页</a></p>
+{% endif %}
+{% endblock %}

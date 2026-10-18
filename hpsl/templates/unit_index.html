@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner, state_badge %}
+{% block title %}HPSL · 单元{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="notice">{{ error }}</div>
+  <p><a href="/">返回首页选择或新建项目</a></p>
+{% else %}
+
+<h1>单元 · {{ project.name }}</h1>
+<p><small>目标：{{ project.goal }}</small></p>
+
+{{ help_banner("学习单元 = 你要攻克的一个个小知识点",
+   "系统会把一个大目标，拆成许多小单元，一步步带你学、练、考。点单元名进入详情；「状态」告诉你它进行到哪一步了。") }}
+
+<section>
+  <h2>单元列表（{{ units|length }}）</h2>
+  {% if units %}
+    <ul id="unit-list" class="card list-clean">
+    {% for u in units %}
+      <li id="unit-{{ u.id }}">
+        <a href="/unit/{{ u.id }}">{{ u.title }}</a>
+        · 状态：{{ state_badge(u.status) }}
+        · 强制闭环：{{ u.forced_close }}
+        {% if u.closed_at %}· 闭环于：{{ u.closed_at }}{% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  {% else %}
+    <p class="ok">暂无单元，单元由学习会话流程产生。</p>
+  {% endif %}
+</section>
+
+<p><a href="/ledger">前往账本总览</a> · <a href="/">返回首页</a></p>
+{% endif %}
+{% endblock %}

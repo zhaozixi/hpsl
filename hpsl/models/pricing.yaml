@@ -1,0 +1,15 @@
+# HPSL 价格表（用户可维护）。单位：美元 / 1K tokens。
+# M4 仅占位读取（cost 记账钩子属 M8，此处为后续成本治理预留数据）。
+
+currency: USD
+
+models:
+  gpt-4o-mini:
+    in_per_1k: 0.00015
+    out_per_1k: 0.0006
+  deepseek-chat:
+    in_per_1k: 0.0001
+    out_per_1k: 0.0002
+  claude-3-5-haiku-20241022:
+    in_per_1k: 0.00025
+    out_per_1k: 0.00125

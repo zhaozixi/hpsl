@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner, state_badge, gap_badge, field %}
+{% block title %}HPSL · 单元详情{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="notice">{{ error }}</div>
+  <p><a href="/unit">返回单元列表</a> · <a href="/">返回首页</a></p>
+{% else %}
+
+<h1>{{ unit.title }} · {{ state_badge(unit.status) }}</h1>
+<p><small>所属项目：{{ project.name }}</small></p>
+
+{{ help_banner("这个单元的完整情况",
+   "在这里能看到：① 单元的基本信息（进行到哪一步、难度多大）② 学习工作流，可推进到下一步 ③ 还有哪些没弄懂的地方（缺口）④ 你自己写下的要点卡片。") }}
+
+<section>
+  <h2>① 单元元信息</h2>
+  <ul class="field-list">
+    {{ field("标题", unit.title, "这个学习单元的名字") }}
+    {{ field("状态", state_badge(unit.status), "这个单元进行到哪一步了") }}
+    {{ field("难度档", unit.difficulty_band, "系统评估出来的难度等级") }}
+    {{ field("降级次数", unit.degrade_count, "被判定「没掌握、需要重来」的次数") }}
+    {{ field("产出内容", unit.production, "你亲手写出或做出的成果") }}
+    {{ field("产出时间", unit.produced_at, "产出完成的时间") }}
+    {{ field("是否跳过产出", unit.skipped_produce, "是否跳过了「动手做」这一步") }}
+    {{ field("是否强制闭环", unit.forced_close, "是否在没走完流程的情况下被标记完成") }}
+    {{ field("闭环时间", unit.closed_at, "这个单元最终完成的时间") }}
+  </ul>
+</section>
+
+<section>
+  <h2>② 工作流（M2）</h2>
+  {% include "_unit_wf_panel.html" %}
+</section>
+
+<section>
+  <h2>③ 缺口（M7）</h2>
+  {% if gaps %}
+    <ul id="gap-list" class="list-clean">
+    {% for g in gaps %}
+      <li id="gap-{{ g.id }}">
+        {{ gap_badge(g.level) }} · 状态：{{ g.status }} · {{ g.text }}
+      </li>
+    {% endfor %}
+    </ul>
+  {% else %}
+    <p class="ok">本单元暂无缺口（空态）。</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>④ 挑错（M5）</h2>
+  {% if claim_checks %}
+    <div id="cc-list">
+    {% for cc in claim_checks %}
+      {% include "_unit_cc_row.html" %}
+    {% endfor %}
+    </div>
+  {% else %}
+    <p class="ok">本单元暂无挑错记录（空态）。</p>
+  {% endif %}
+</section>
+
+<p><a href="/unit">返回单元列表</a> · <a href="/ledger">前往账本总览</a></p>
+{% endif %}
+{% endblock %}

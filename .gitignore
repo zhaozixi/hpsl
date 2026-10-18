@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenv（本机 venv 已腐化，不入库）
+.venv/
+venv/
+
+# 本地数据 / 密钥（HPSL_HOME 下的运行态产物）
+*.db
+*.db-wal
+*.db-shm
+*.fernet
+.env
+hpsl/secrets/*.fernet
+
+# 导出与快照
+exports/
+backups/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

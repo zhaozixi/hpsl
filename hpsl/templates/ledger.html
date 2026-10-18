@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner, tip %}
+{% block title %}HPSL · 账本总览{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="notice">{{ error }}</div>
+  <p><a href="/">返回首页选择或新建项目</a></p>
+{% else %}
+
+<h1>账本总览 · {{ project.name }}</h1>
+<p><small>目标：{{ project.goal }}</small></p>
+
+{{ help_banner("账本总览：用四张账 + 四个角度，看清学习全貌",
+   "「四本账」分别统计缺口、单元、卡片、概念的数量；「四平面度量」从质量、节奏、进度、风险四个角度打分。下面一些名词加了「?」，鼠标悬停看通俗解释。") }}
+
+<!-- 四本账（M7 ledger_summary） -->
+<section>
+  <h2>四本账</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>缺口</h3>
+      <p>总计 <b>{{ summary.gaps.total }}</b></p>
+      <ul>
+        <li>待补 {{ summary.gaps.待补 }}</li>
+        <li>已补 {{ summary.gaps.已补 }}</li>
+        <li>已验证 {{ summary.gaps.已验证 }}</li>
+        <li>废弃 {{ summary.gaps.废弃 }}</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>单元</h3>
+      <p>总计 <b>{{ summary.units.total }}</b></p>
+      <ul>
+        {% for k, v in summary.units.items() %}{% if k != 'total' %}<li>{{ k }} {{ v }}</li>{% endif %}{% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <h3>卡片</h3>
+      <p>总计 <b>{{ summary.cards.total }}</b></p>
+      <ul>
+        <li>已验证 {{ summary.cards.已验证 }}</li>
+        <li>未验证 {{ summary.cards.未验证 }}</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>概念</h3>
+      <p>总计 <b>{{ summary.concepts.total }}</b></p>
+      <ul>
+        <li>已验证 {{ summary.concepts.已验证 }}</li>
+        <li>未验证 {{ summary.concepts.未验证 }}</li>
+        <li>待验证 {{ summary.concepts.待验证 }}</li>
+      </ul>
+      <p>概念连线 <b>{{ summary.concept_edges.total }}</b></p>
+      <p>活跃复测 <b>{{ summary.reviews_active }}</b></p>
+    </div>
+  </div>
+</section>
+
+<!-- 四平面度量（M9 compute_counts） -->
+<section>
+  <h2>四平面度量</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>质量</h3>
+      <ul>
+        <li>{{ tip("通过率", "所有内容里，被判定为「真正掌握」的比例；越高越好") }} {{ "%.1f"|format(counts.pass_rate * 100) }}%</li>
+        <li>{{ tip("复测通过率", "回来巩固时，一次就答对的比例；反映记牢没有") }} {{ "%.1f"|format(counts.review_pass_rate * 100) }}%</li>
+        <li>{{ tip("校准偏差", "你「觉得自己会了」和「实际会不会」之间的差距；越小越诚实") }} {{ "%.2f"|format(counts.calibration_gap) }}</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>节奏</h3>
+      <ul>
+        <li>一级缺口超限会话 {{ counts.l1_gap_sessions }}</li>
+        <li>{{ tip("零缺口会话占比", "整段学习里「没发现任何问题」的场次比例；长期为 0 也未必好，可能没在认真找错") }} {{ "%.1f"|format(counts.zero_gap_ratio * 100) }}%</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>进度</h3>
+      <ul>
+        <li>{{ tip("单元完成率", "所有单元里，已经走完流程的比例") }} {{ "%.1f"|format(counts.unit_completion * 100) }}%</li>
+        <li>{{ tip("缺口清账率", "发现的「没弄懂之处」里，已经补上并验证的比例") }} {{ "%.1f"|format(counts.gap_clear_ratio * 100) }}%</li>
+        <li>二级缺口积压 {{ counts.l2_gap_backlog }}</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>风险</h3>
+      <ul>
+        <li>{{ tip("强行闭环占比", "没走完流程就被标记「完成」的比例；过高说明在「凑数」") }} {{ "%.1f"|format(counts.forced_close_ratio * 100) }}%</li>
+        <li>{{ tip("跳过产出占比", "只学没练的比例；只学不练，印象不深") }} {{ "%.1f"|format(counts.skipped_produce_ratio * 100) }}%</li>
+        <li>未裁决分歧 {{ counts.unresolved_disagreements }}</li>
+        <li>{{ tip("孤岛节点占比", "和其他概念毫无关联的知识点比例；越高说明知识越零散、不成体系") }} {{ "%.1f"|format(counts.isolated_node_ratio * 100) }}%</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 治理软提示（M9 plane_signals；一键关闭走 htmx POST 至写接口） -->
+<section>
+  <h2>治理软提示</h2>
+  <div id="soft-prompts">
+    {% if signals %}
+      {% for s in signals %}
+      <div class="prompt prompt-{{ s.level }}" id="prompt-{{ s.id }}">
+        <span class="badge">{{ s.plane }}</span>
+        <span class="msg">{{ s.message }}</span>
+        <button type="button"
+                hx-post="/api/v1/soft-prompts/{{ s.id }}/dismiss"
+                hx-swap="none"
+                hx-on::after-request="if (event.detail.successful) this.closest('.prompt').remove()" class="btn btn-sm">关闭</button>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="ok">暂无需要关注的提示，继续保持。</p>
+    {% endif %}
+  </div>
+</section>
+
+<p><a href="/">返回首页</a></p>
+{% endif %}
+{% endblock %}

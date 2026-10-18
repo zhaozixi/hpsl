@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hpsl"
+version = "0.0.0"
+description = "HPSL 项目制学习框架工具 - M0 多项目与数据底座"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "httpx",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+hpsl = "hpsl.app:main"
+
+[tool.setuptools]
+packages = ["hpsl", "hpsl.common", "hpsl.models"]

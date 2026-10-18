@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner %}
+{% block title %}HPSL · 复测{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="notice">{{ error }}</div>
+  <p><a href="/">返回首页选择或新建项目</a></p>
+{% else %}
+
+<h1>复测 · {{ project.name }}</h1>
+<p><small>目标：{{ project.goal }}</small></p>
+
+{{ help_banner("到期了，回来巩固一下",
+   "根据记忆规律，学过的东西隔一段时间容易忘。这里列出该复习的内容，点「开始复测」温习即可，不用从头再学。") }}
+
+<section>
+  <h2>到期复测（{{ items|length }}）</h2>
+  {% if items %}
+    <div id="review-list">
+    {% for it in items %}
+      <div class="card" id="review-{{ it.review_id }}">
+        <h3>{{ it.concept_name or it.concept_id }}</h3>
+        <ul>
+          <li>类型：{{ it.kind }}</li>
+          <li>间隔档：{{ it.interval_days }} 天</li>
+          <li>到期：{{ it.due }}</li>
+        </ul>
+        <div id="panel-{{ it.review_id }}">
+          <button type="button"
+                  hx-post="/api/v1/reviews/{{ it.review_id }}/start"
+                  hx-target="#panel-{{ it.review_id }}"
+                  hx-swap="outerHTML" class="btn btn-sm">开始复测</button>
+        </div>
+      </div>
+    {% endfor %}
+    </div>
+  {% else %}
+    <p class="ok">暂无到期复测，继续保持。</p>
+  {% endif %}
+</section>
+
+<p><a href="/ledger">前往账本总览</a> · <a href="/">返回首页</a></p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,85 @@
+{# 共享展示宏：把系统内部术语 / 状态翻译成通俗中文，并提供悬浮提示与模块说明。
+   设计原则：后端枚举值（如 INIT / ok / L1）保持不变，仅在界面层做「显示翻译」，
+   既不触碰数据库，也不需要改后端逻辑。 #}
+
+{# —— 单元状态：把 INIT / PICK / ... 翻译成人话，并附悬浮说明 —— #}
+{% macro state_badge(s) %}
+{%- set m = {
+  "INIT":      ("未开始", "刚建立，还没开始动手"),
+  "PICK":      ("选题中", "正在挑选要攻克的某个知识点"),
+  "LEARN":     ("学习中", "正在阅读、理解相关内容"),
+  "PRODUCE":   ("产出中", "正在动手写出或做出点东西"),
+  "VERIFY":    ("验证中", "正在检查自己的产出对不对"),
+  "JUDGE":     ("评判中", "判断自己到底掌握没有"),
+  "INTEGRATE": ("整合中", "把新学的内容并入整体知识"),
+  "CLOSED":    ("已完成", "这个学习单元已经结束")
+} -%}
+{%- set t = m.get(s) -%}
+{%- if t -%}
+<span class="badge state-{{ s|lower }}" title="{{ t[1] }}">{{ t[0] }}</span>
+{%- else -%}
+<span class="badge">{{ s }}</span>
+{%- endif -%}
+{% endmacro %}
+
+{# —— 缺口级别：1/2/3 → 轻微 / 一般 / 严重 —— #}
+{% macro gap_badge(level) %}
+{%- set m = {
+  1: ("轻微", "影响不大，可以稍后补"),
+  2: ("一般", "需要补上，否则会影响后面"),
+  3: ("严重", "必须优先解决，卡住进度")
+} -%}
+{%- set t = m.get(level) -%}
+{%- if t -%}
+<span class="badge gap-l{{ level }}" title="{{ t[1] }}">级别 {{ t[0] }}</span>
+{%- else -%}
+<span class="badge">级别 {{ level }}</span>
+{%- endif -%}
+{% endmacro %}
+
+{# —— 预算 / 花费状态：ok / warn / blocked → 正常 / 临近上限 / 已超限 —— #}
+{% macro cost_badge(s) %}
+{%- set m = {
+  "ok":      ("正常", "花费还在预算之内"),
+  "warn":    ("临近上限", "花费已到预算的 80%，注意控制"),
+  "blocked": ("已超限", "已达到预算上限，需你确认后才放行")
+} -%}
+{%- set t = m.get(s) -%}
+{%- if t -%}
+<span class="badge cost-{{ s }}" title="{{ t[1] }}">{{ t[0] }}</span>
+{%- else -%}
+<span class="badge">{{ s }}</span>
+{%- endif -%}
+{% endmacro %}
+
+{# —— 概念之间的关系类型：未知值原样显示，保证不丢信息 —— #}
+{% macro relation_label(k) %}
+{%- set m = {
+  "prereq": "前置知识", "relate": "相关", "example": "示例",
+  "cause": "因果", "part": "组成部分", "refine": "细化", "supersede": "更新替代"
+} -%}
+{%- set v = m.get(k, k) -%}{{ v }}{% endmacro %}
+
+{# —— 模块说明横幅：每个页面顶部放一句大白话，告诉用户「这是干嘛的、怎么用」 —— #}
+{% macro help_banner(title, body) %}
+<div class="help-banner" role="note" aria-label="使用说明">
+  <div class="help-banner-icon" aria-hidden="true">💡</div>
+  <div class="help-banner-body">
+    <div class="help-banner-title">{{ title }}</div>
+    <div class="help-banner-text">{{ body }}</div>
+  </div>
+</div>
+{% endmacro %}
+
+{# —— 行内术语：给某个词加一个「?」小角标，鼠标悬停看通俗解释 —— #}
+{% macro tip(text, explain) %}
+<span class="tip" data-tip="{{ explain }}">{{ text }}<span class="tip-mark" aria-hidden="true">?</span></span>
+{% endmacro %}
+
+{# —— 字段行：把数据库字段名换成中文标签，并附说明 —— #}
+{% macro field(label, value, explain) %}
+<li>
+  <span class="field-label" title="{{ explain }}">{{ label }}</span>：
+  <span class="field-value">{{ value if value is not none else "—" }}</span>
+</li>
+{% endmacro %}

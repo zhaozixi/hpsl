@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner %}
+{% block title %}HPSL · 卡片{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="notice">{{ error }}</div>
+  <p><a href="/">返回首页选择或新建项目</a></p>
+{% else %}
+
+<h1>卡片 · {{ project.name }}</h1>
+<p><small>目标：{{ project.goal }}</small></p>
+
+{{ help_banner("要点卡片 = 你学完时记下的笔记",
+   "每当一项内容验证通过，系统会生成一张卡片，写清要点与对应的概念。日后复习、回顾都靠它。") }}
+
+<section>
+  <h2>卡片列表（{{ cards|length }}）</h2>
+  {% if cards %}
+    <ul id="card-list" class="card list-clean">
+    {% for c in cards %}
+      <li id="card-{{ c.id }}">
+        <b>{{ c.my_words }}</b>
+        <small>· 概念：{{ c.concept_name or c.concept_id }} · 状态：{{ c.verify_status }}</small>
+      </li>
+    {% endfor %}
+    </ul>
+  {% else %}
+    <p class="ok">暂无卡片，卡片由学习产出流程生成。</p>
+  {% endif %}
+</section>
+
+<p><a href="/graph">查看概念图</a> · <a href="/">返回首页</a></p>
+{% endif %}
+{% endblock %}

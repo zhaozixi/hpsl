@@ -1,0 +1,486 @@
+{% extends "base.html" %}
+{% from "macros.html" import relation_label, help_banner %}
+{% block title %}HPSL · 概念图{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="notice">{{ error }}</div>
+  <p><a href="/">返回首页选择或新建项目</a></p>
+{% else %}
+
+<h1>概念图 · {{ project.name }}</h1>
+<p><small>目标：{{ project.goal }}</small></p>
+
+{{ help_banner("概念图：知识点之间的关系",
+   "每个圆点是一个「概念」（你学到的知识点），连线表示它们之间的关系（如「前置知识」「组成部分」）。点圆点看详情，按住拖动可摆放位置，滚轮或下方按钮可缩放。") }}
+
+<style>
+  .graph-shell { position:relative; }
+  #concept-graph { border:1px solid var(--border); background:var(--surface); cursor:grab; touch-action:none; display:block; max-width:100%; }
+  #concept-graph:active { cursor:grabbing; }
+  .node { cursor:pointer; }
+  .node.dragging { cursor:grabbing; }
+  .node circle { transition: fill .2s ease, stroke-width .2s ease, opacity .2s ease; }
+  .node text { font-size:13px; fill:var(--text); transition: opacity .2s ease; }
+  .node.selected circle { stroke:var(--text); stroke-width:2.5; }
+  .node.selected text { font-weight:700; }
+  .node.search-hit circle { stroke:var(--info-bd); stroke-width:3; }
+  .node.dim, .edge.dim { opacity:0.12; }
+  .edge line { transition: opacity .2s ease, stroke-width .2s ease; }
+  .edge-label { font-size:10px; fill:var(--text-muted); }
+  .graph-controls { margin:8px 0; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .graph-controls .sep { width:1px; height:22px; background:var(--border); margin:0 4px; }
+  #graph-search { width:200px; margin:0; }
+  #graph-tooltip { position:absolute; pointer-events:none; background:var(--brand); color:#fff; padding:4px 8px; border-radius:6px; font-size:12px; box-shadow:var(--shadow-md); opacity:0; transition:opacity .12s ease; white-space:nowrap; z-index:10; }
+  #graph-search-status { font-size:12px; color:var(--text-muted); }
+  #graph-detail { margin-top:10px; padding:10px 12px; border:1px solid var(--border); border-radius:6px; background:var(--surface); min-height:20px; }
+  .legend { font-size:12px; color:var(--text-muted); margin-top:8px; display:flex; flex-wrap:wrap; gap:4px 16px; }
+  .legend span { display:inline-flex; align-items:center; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; }
+  .hint { color:var(--text-muted); font-size:12px; }
+</style>
+
+<div class="graph-controls">
+  <button type="button" class="btn btn-sm" onclick="zoomBy(1.2)" aria-label="放大">＋</button>
+  <button type="button" class="btn btn-sm" onclick="zoomBy(1/1.2)" aria-label="缩小">－</button>
+  <button type="button" class="btn btn-sm" onclick="resetView()">重置</button>
+  <button type="button" class="btn btn-sm" onclick="fitView()">适配</button>
+  <button type="button" class="btn btn-sm" onclick="autoLayout()">自动布局</button>
+  <button type="button" class="btn btn-sm" onclick="hierarchicalLayout()">分层布局</button>
+  <span class="sep"></span>
+  <input id="graph-search" class="input" type="search" placeholder="搜索概念名…" oninput="onSearchInput()" onkeydown="onSearchKey(event)">
+  <span id="graph-search-status"></span>
+</div>
+
+<section class="graph-shell">
+  <h2>概念节点（{{ concepts|length }}）与关系（{{ edges|length }}）</h2>
+  {% if nodes %}
+  <svg id="concept-graph" width="{{ svg.w }}" height="{{ svg.h }}" viewBox="0 0 {{ svg.w }} {{ svg.h }}" xmlns="http://www.w3.org/2000/svg">
+    <g id="viewport">
+      {% for e in edge_views %}
+      <g class="edge" id="edge-{{ loop.index }}" data-src="{{ e.src }}" data-dst="{{ e.dst }}">
+        <line x1="{{ e.x1 }}" y1="{{ e.y1 }}" x2="{{ e.x2 }}" y2="{{ e.y2 }}" stroke="#888" stroke-width="1.5">
+          <title>{{ e.src }} → {{ e.dst }}（{{ relation_label(e.kind) }}）</title>
+        </line>
+        <text class="edge-label" x="{{ (e.x1 + e.x2) / 2 }}" y="{{ (e.y1 + e.y2) / 2 - 4 }}" text-anchor="middle">{{ relation_label(e.kind) }}</text>
+      </g>
+      {% endfor %}
+      {% for nd in nodes %}
+      <g class="node" id="node-{{ nd.id }}" data-id="{{ nd.id }}" data-status="{{ nd.verify_status }}" onclick="selectNode('{{ nd.id }}')">
+        <circle cx="{{ nd.x }}" cy="{{ nd.y }}" r="7" fill="#9ca3af">
+          <title>{{ nd.name }} · {{ nd.verify_status }}</title>
+        </circle>
+        <text x="{{ nd.x }}" y="{{ nd.y - 12 }}" text-anchor="middle" font-size="13">{{ nd.name }}</text>
+      </g>
+      {% endfor %}
+    </g>
+  </svg>
+  <div id="graph-tooltip"></div>
+  <div id="graph-detail">点击任意节点查看概念详情与关联；悬停查看状态；滚轮/双指或 ＋－ 缩放。</div>
+  <div class="legend">
+    <span><span class="dot" style="background:#0a7d2c"></span>已验证</span>
+    <span><span class="dot" style="background:#9ca3af"></span>未验证</span>
+    <span><span class="dot" style="background:#f59e0b"></span>待验证</span>
+    <span><span class="dot" style="background:#888"></span>关系连线（标注关系类型）</span>
+  </div>
+  <p class="hint">滚轮 / 双指缩放 · 拖拽空白平移 · 拖拽节点调整布局（自动保存）· 双击重置 · 点击节点查看详情</p>
+  {% else %}
+    <p class="ok">暂无概念节点，概念由学习产出流程生成。</p>
+  {% endif %}
+</section>
+
+<script>
+const NODES = {{ nodes | tojson }};
+const EDGES = {{ edge_views | tojson }};
+const CONCEPTS = {{ concepts | tojson }};
+const W = {{ svg.w }}, H = {{ svg.h }};
+let tx = 0, ty = 0, k = 1, selectedId = null, moved = 0, dragging = false, lastX = 0, lastY = 0, searchTerm = '';
+const svg = document.getElementById('concept-graph');
+const vp = document.getElementById('viewport');
+const tooltip = document.getElementById('graph-tooltip');
+
+function csrf() {
+  const c = document.cookie.split('; ').find(function (x) { return x.startsWith('hpsl_csrf='); });
+  return c ? c.split('=')[1] : '';
+}
+let dragNode = null, dragDX = 0, dragDY = 0;
+
+const STATUS_COLORS = { '已验证': '#0a7d2c', '待验证': '#f59e0b', '未验证': '#9ca3af' };
+function statusColor(s) { return STATUS_COLORS[s] || '#9ca3af'; }
+function nodeName(id) { const n = NODES.find(function (x) { return x.id === id; }); return (n ? n.name : id) || id; }
+
+function apply() { vp.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + k + ')'); }
+
+// 状态着色：根据 data-status 设置圆点填充
+function applyStatusColors() {
+  NODES.forEach(function (n) {
+    const g = document.getElementById('node-' + n.id);
+    if (!g) { return; }
+    const c = g.querySelector('circle');
+    if (c) { c.setAttribute('fill', statusColor(n.verify_status)); }
+  });
+}
+
+// 平移（鼠标 / 单指触摸）
+svg.addEventListener('pointerdown', function (e) {
+  if (e.pointerType === 'touch') { return; }  // 触摸交由 touch 处理器，避免与 pinch 冲突
+  moved = 0; lastX = e.clientX; lastY = e.clientY; dragging = true;
+  if (svg.setPointerCapture) { try { svg.setPointerCapture(e.pointerId); } catch (_) {} }
+});
+svg.addEventListener('pointermove', function (e) {
+  if (dragNode) {
+    const r = svg.getBoundingClientRect();
+    const mx = (e.clientX - r.left - tx) / k;
+    const my = (e.clientY - r.top - ty) / k;
+    dragNode.x = mx - dragDX; dragNode.y = my - dragDY;
+    const g = document.getElementById('node-' + dragNode.id);
+    if (g) {
+      g.querySelector('circle').setAttribute('cx', dragNode.x);
+      g.querySelector('circle').setAttribute('cy', dragNode.y);
+      const t = g.querySelector('text');
+      if (t) { t.setAttribute('x', dragNode.x); t.setAttribute('y', dragNode.y - 12); }
+    }
+    return;
+  }
+  if (!dragging) { return; }
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  moved += Math.abs(dx) + Math.abs(dy);
+  tx += dx; ty += dy; lastX = e.clientX; lastY = e.clientY; apply();
+});
+window.addEventListener('pointerup', function () {
+  if (dragNode) {
+    const g = document.getElementById('node-' + dragNode.id);
+    if (g) { g.classList.remove('dragging'); }
+    persistLayout();
+    dragNode = null;
+  }
+  dragging = false;
+});
+
+// 节点拖拽（仅鼠标；触摸交给 pinch/pan，避免冲突）；拖完持久化布局
+NODES.forEach(function (n) {
+  const g = document.getElementById('node-' + n.id);
+  if (!g) { return; }
+  g.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'touch') { return; }
+    e.stopPropagation();
+    dragNode = n;
+    const r = svg.getBoundingClientRect();
+    const mx = (e.clientX - r.left - tx) / k;
+    const my = (e.clientY - r.top - ty) / k;
+    dragDX = mx - n.x; dragDY = my - n.y;
+    if (svg.setPointerCapture) { try { svg.setPointerCapture(e.pointerId); } catch (_) {} }
+    g.classList.add('dragging');
+  });
+});
+
+function persistLayout() {
+  const layout = {};
+  NODES.forEach(function (n) {
+    layout[n.id] = { x: Math.round(n.x * 100) / 100, y: Math.round(n.y * 100) / 100 };
+  });
+  fetch('/api/v1/graph/layout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
+    body: JSON.stringify({ layout: layout })
+  }).catch(function () {});
+}
+
+// 滚轮缩放（以光标为锚点）
+svg.addEventListener('wheel', function (e) {
+  e.preventDefault();
+  const r = svg.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const f = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const nk = Math.min(6, Math.max(0.2, k * f));
+  tx = mx - (mx - tx) * (nk / k);
+  ty = my - (my - ty) * (nk / k);
+  k = nk; apply();
+}, { passive: false });
+
+// 双指 pinch 缩放 + 中点平移
+let pinchStart = null;
+function _tdist(a, b) { return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); }
+svg.addEventListener('touchstart', function (e) {
+  if (e.touches.length === 2) {
+    const a = e.touches[0], b = e.touches[1];
+    pinchStart = { dist: _tdist(a, b), k: k, tx: tx, ty: ty };
+    dragging = false;
+  }
+}, { passive: false });
+svg.addEventListener('touchmove', function (e) {
+  if (e.touches.length === 2 && pinchStart) {
+    e.preventDefault();
+    const a = e.touches[0], b = e.touches[1];
+    const f = _tdist(a, b) / pinchStart.dist;
+    const nk = Math.min(6, Math.max(0.2, pinchStart.k * f));
+    const r = svg.getBoundingClientRect();
+    const mx = (a.clientX + b.clientX) / 2 - r.left;
+    const my = (a.clientY + b.clientY) / 2 - r.top;
+    tx = mx - (mx - pinchStart.tx) * (nk / pinchStart.k);
+    ty = my - (my - pinchStart.ty) * (nk / pinchStart.k);
+    k = nk; apply();
+  }
+}, { passive: false });
+svg.addEventListener('touchend', function (e) { if (e.touches.length < 2) { pinchStart = null; } });
+
+// 双击重置
+svg.addEventListener('dblclick', function () { resetView(); });
+
+// 点击空白处取消选择
+svg.addEventListener('click', function (e) {
+  if (e.target === svg && selectedId) { selectedId = null; render(); }
+});
+
+// 悬停提示
+function showTooltip(g) {
+  const id = g.getAttribute('data-id');
+  const n = NODES.find(function (x) { return x.id === id; }) || {};
+  const c = CONCEPTS.find(function (x) { return x.id === id; }) || {};
+  tooltip.innerHTML = '<strong>' + (n.name || id) + '</strong> · ' + statusColorName(n.verify_status)
+    + '<br><small>最近验证：' + (c.last_verified_at || '—') + '</small>';
+  const rect = svg.getBoundingClientRect();
+  const r = g.querySelector('circle').getBoundingClientRect();
+  tooltip.style.left = (r.left - rect.left + r.width / 2) + 'px';
+  tooltip.style.top = (r.top - rect.top - 6) + 'px';
+  tooltip.style.transform = 'translate(-50%, -100%)';
+  tooltip.style.opacity = '1';
+}
+function hideTooltip() { tooltip.style.opacity = '0'; }
+function statusColorName(s) {
+  if (s === '已验证') { return '已验证'; }
+  if (s === '待验证') { return '待验证'; }
+  return '未验证';
+}
+vp.addEventListener('mouseover', function (e) { const g = e.target.closest && e.target.closest('.node'); if (g) { showTooltip(g); } });
+vp.addEventListener('mouseout', function (e) { const g = e.target.closest && e.target.closest('.node'); if (g) { hideTooltip(); } });
+
+function neighbors(id) {
+  const s = new Set();
+  EDGES.forEach(function (ed) {
+    if (ed.src === id) { s.add(ed.dst); }
+    if (ed.dst === id) { s.add(ed.src); }
+  });
+  return s;
+}
+
+function selectNode(id) {
+  if (moved > 6) { return; }  // 拖拽误触不触发选中
+  selectedId = (selectedId === id) ? null : id;
+  render();
+}
+
+function onSearchInput() {
+  searchTerm = document.getElementById('graph-search').value || '';
+  render();
+  const t = searchTerm.trim().toLowerCase();
+  const status = document.getElementById('graph-search-status');
+  if (!t) { status.textContent = ''; return; }
+  const hits = NODES.filter(function (n) { return (n.name || '').toLowerCase().indexOf(t) >= 0; });
+  status.textContent = '命中 ' + hits.length + ' 个';
+}
+function onSearchKey(e) {
+  if (e.key === 'Enter') {
+    const t = searchTerm.trim().toLowerCase();
+    if (!t) { return; }
+    const hit = NODES.find(function (n) { return (n.name || '').toLowerCase().indexOf(t) >= 0; });
+    if (hit) { selectedId = hit.id; render(); }
+  }
+}
+
+function render() {
+  const nb = selectedId ? neighbors(selectedId) : null;
+  const t = searchTerm.trim().toLowerCase();
+  NODES.forEach(function (n) {
+    const g = document.getElementById('node-' + n.id);
+    if (!g) { return; }
+    const isMatch = !t || (n.name || '').toLowerCase().indexOf(t) >= 0;
+    const selHidden = !!selectedId && n.id !== selectedId && !(nb && nb.has(n.id));
+    const hidden = (t && !isMatch) || (selectedId && selHidden);
+    g.classList.toggle('dim', hidden);
+    g.classList.toggle('search-hit', !!(t && isMatch));
+    g.classList.toggle('selected', n.id === selectedId);
+  });
+  EDGES.forEach(function (ed, i) {
+    const g = document.getElementById('edge-' + (i + 1));
+    if (!g) { return; }
+    let inc = !selectedId || ed.src === selectedId || ed.dst === selectedId;
+    if (t) {
+      const sm = (nodeName(ed.src) || '').toLowerCase().indexOf(t) >= 0
+              || (nodeName(ed.dst) || '').toLowerCase().indexOf(t) >= 0;
+      inc = inc && sm;
+    }
+    g.classList.toggle('dim', !inc);
+  });
+  applyStatusColors();
+  updateDetail();
+}
+
+function updateDetail() {
+  const d = document.getElementById('graph-detail');
+  if (!selectedId) {
+    d.innerHTML = '点击任意节点查看概念详情与关联；悬停查看状态；滚轮/双指或 ＋－ 缩放。';
+    return;
+  }
+  const c = CONCEPTS.find(function (x) { return x.id === selectedId; }) || {};
+  const related = EDGES
+    .filter(function (ed) { return ed.src === selectedId || ed.dst === selectedId; })
+    .map(function (ed) {
+      const other = ed.src === selectedId ? ed.dst : ed.src;
+      return nodeName(other) + '（' + (ed.kind || '关联') + '）';
+    });
+  d.innerHTML = '<strong>' + (c.name || selectedId) + '</strong> · 验证状态：'
+    + '<span style="color:' + statusColor(c.verify_status) + ';font-weight:700">' + (c.verify_status || '未知') + '</span>'
+    + '<br><small>最近验证：' + (c.last_verified_at || '—') + '</small>'
+    + (related.length ? ('<br>关联：' + related.join('、')) : '');
+}
+
+function zoomBy(factor) {
+  const r = svg.getBoundingClientRect();
+  const mx = r.width / 2, my = r.height / 2;
+  const nk = Math.min(6, Math.max(0.2, k * factor));
+  tx = mx - (mx - tx) * (nk / k);
+  ty = my - (my - ty) * (nk / k);
+  k = nk; apply(); render();
+}
+
+function fitView() {
+  if (!NODES.length) { return; }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  NODES.forEach(function (n) {
+    minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y);
+  });
+  const pad = 40;
+  const bw = (maxX - minX) || 1, bh = (maxY - minY) || 1;
+  const nk = Math.max(0.2, Math.min((W - pad * 2) / bw, (H - pad * 2) / bh, 4));
+  tx = (W - nk * (minX + maxX)) / 2;
+  ty = (H - nk * (minY + maxY)) / 2;
+  k = nk; apply(); render();
+}
+
+// 自动布局：客户端力导向（force-directed）替换环形默认；计算后经 M15 的 persistLayout 持久化（零 DDL）。
+function autoLayout() {
+  if (!NODES.length) { return; }
+  const pad = 40;
+  const n = NODES.length;
+  NODES.forEach(function (nd) {
+    if (typeof nd.x !== 'number' || typeof nd.y !== 'number') {
+      nd.x = pad + Math.random() * (W - 2 * pad);
+      nd.y = pad + Math.random() * (H - 2 * pad);
+    }
+  });
+  const k = Math.sqrt((W - 2 * pad) * (H - 2 * pad) / Math.max(n, 1));
+  const iters = n > 120 ? 100 : 250;
+  const lim = W / 3;
+  const nodeById = function (id) { return NODES.find(function (x) { return x.id === id; }); };
+  for (let it = 0; it < iters; it++) {
+    const disp = NODES.map(function () { return { x: 0, y: 0 }; });
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i === j) { continue; }
+        let dx = NODES[i].x - NODES[j].x;
+        let dy = NODES[i].y - NODES[j].y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 0.01) { d2 = 0.01; dx = Math.random() - 0.5; dy = Math.random() - 0.5; }
+        const d = Math.sqrt(d2);
+        const rep = (k * k) / d;
+        disp[i].x += (dx / d) * rep;
+        disp[i].y += (dy / d) * rep;
+      }
+    }
+    for (let e = 0; e < EDGES.length; e++) {
+      const a = nodeById(EDGES[e].src), b = nodeById(EDGES[e].dst);
+      if (!a || !b) { continue; }
+      let dx = a.x - b.x, dy = a.y - b.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const att = (d * d) / k;
+      const fx = (dx / d) * att, fy = (dy / d) * att;
+      const ia = NODES.indexOf(a), ib = NODES.indexOf(b);
+      disp[ia].x -= fx; disp[ia].y -= fy;
+      disp[ib].x += fx; disp[ib].y += fy;
+    }
+    for (let i = 0; i < n; i++) {
+      let dx = disp[i].x, dy = disp[i].y;
+      const dl = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const f = Math.min(dl, lim) / dl;
+      NODES[i].x += dx * f; NODES[i].y += dy * f;
+      NODES[i].x = Math.max(pad, Math.min(W - pad, NODES[i].x));
+      NODES[i].y = Math.max(pad, Math.min(H - pad, NODES[i].y));
+    }
+  }
+  NODES.forEach(function (nd) {
+    const g = document.getElementById('node-' + nd.id);
+    if (!g) { return; }
+    g.querySelector('circle').setAttribute('cx', nd.x);
+    g.querySelector('circle').setAttribute('cy', nd.y);
+    const t = g.querySelector('text');
+    if (t) { t.setAttribute('x', nd.x); t.setAttribute('y', nd.y - 12); }
+  });
+  apply(); render();
+  persistLayout();
+}
+
+// 分层布局：按 concept_edge 最长路径分层（根层=0 居顶，向下递增），同层横向均布；
+// 计算后经 M15 的 persistLayout 持久化（零 DDL）。含环时落入层 0，避免死循环。
+function hierarchicalLayout() {
+  if (!NODES.length) { return; }
+  const pad = 40;
+  const byId = {};
+  NODES.forEach(function (nd) { byId[nd.id] = nd; });
+  const indeg = {};
+  const adj = {};
+  NODES.forEach(function (nd) { indeg[nd.id] = 0; adj[nd.id] = []; });
+  EDGES.forEach(function (e) {
+    if (byId[e.src] && byId[e.dst]) {
+      indeg[e.dst] += 1;
+      adj[e.src].push(e.dst);
+    }
+  });
+  const layer = {};
+  NODES.forEach(function (nd) { layer[nd.id] = 0; });
+  const indeg2 = Object.assign({}, indeg);
+  const queue = [];
+  NODES.forEach(function (nd) { if (indeg[nd.id] === 0) { queue.push(nd.id); } });
+  while (queue.length) {
+    const u = queue.shift();
+    adj[u].forEach(function (v) {
+      if (layer[v] < layer[u] + 1) { layer[v] = layer[u] + 1; }
+      indeg2[v] -= 1;
+      if (indeg2[v] === 0) { queue.push(v); }
+    });
+  }
+  let maxLayer = 0;
+  NODES.forEach(function (nd) { if (layer[nd.id] > maxLayer) { maxLayer = layer[nd.id]; } });
+  const groups = [];
+  for (let L = 0; L <= maxLayer; L++) { groups.push([]); }
+  NODES.forEach(function (nd) { groups[layer[nd.id]].push(nd); });
+  const layerH = Math.max(80, (H - 2 * pad) / Math.max(maxLayer, 1));
+  groups.forEach(function (g, L) {
+    const cnt = g.length;
+    const step = cnt > 1 ? (W - 2 * pad) / (cnt - 1) : 0;
+    g.forEach(function (nd, i) {
+      nd.x = cnt > 1 ? (pad + step * i) : (W / 2);
+      nd.y = pad + layerH * L + layerH / 2;
+    });
+  });
+  NODES.forEach(function (nd) {
+    const g = document.getElementById('node-' + nd.id);
+    if (!g) { return; }
+    g.querySelector('circle').setAttribute('cx', nd.x);
+    g.querySelector('circle').setAttribute('cy', nd.y);
+    const t = g.querySelector('text');
+    if (t) { t.setAttribute('x', nd.x); t.setAttribute('y', nd.y - 12); }
+  });
+  apply(); render();
+  persistLayout();
+}
+
+function resetView() { tx = 0; ty = 0; k = 1; selectedId = null; searchTerm = ''; const s = document.getElementById('graph-search'); if (s) { s.value = ''; } const ss = document.getElementById('graph-search-status'); if (ss) { ss.textContent = ''; } hideTooltip(); apply(); render(); }
+
+if (NODES && NODES.length) { render(); }
+</script>
+
+<p><a href="/cards">查看卡片</a> · <a href="/">返回首页</a></p>
+{% endif %}
+{% endblock %}

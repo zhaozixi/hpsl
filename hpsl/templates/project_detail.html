@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner %}
+{% block title %}HPSL · {{ project.name }}{% endblock %}
+{% block content %}
+<h1>{{ project.name }}</h1>
+<p><strong>目标：</strong>{{ project.goal }}</p>
+<p><small>创建时间：{{ project.created_at }}</small></p>
+
+{{ help_banner("项目详情",
+   "这里记着你当初对这个主题的认识，以及当前生效的各项设置。普通学习用不到，想了解进度时可以翻翻。") }}
+
+<section>
+  <h2>初版认识</h2>
+  <p class="text-muted">写下你开始学习前，对这个主题的已有理解。学完回头看，会清楚看到自己哪里改变了。</p>
+  <div id="belief">{{ project.initial_belief or '（未填写）' }}</div>
+  <form class="card" hx-put="/api/v1/projects/{{ project.id }}/initial-belief" hx-target="#belief" hx-swap="innerHTML">
+    <p><textarea class="textarea" name="initial_belief" maxlength="2000" rows="4" cols="60">{{ project.initial_belief or '' }}</textarea></p>
+    <button type="submit" class="btn btn-primary">更新初版认识</button>
+  </form>
+</section>
+
+<section>
+  <h2>生效配置（高级）</h2>
+  <p class="text-muted">下面是系统当前的详细参数（全局设置 + 本项目的覆盖项合并结果）。普通使用不需要看，留作参考。</p>
+  <pre>{{ config }}</pre>
+</section>
+
+<p><a href="/">返回列表</a></p>
+{% endblock %}

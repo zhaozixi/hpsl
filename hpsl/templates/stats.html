@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner, state_badge %}
+{% block title %}HPSL · 学习分析{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="notice">{{ error }}</div>
+  <p><a href="/">返回首页选择或新建项目</a></p>
+{% else %}
+
+<h1>学习分析 · {{ project.name }}</h1>
+<p><small>目标：{{ project.goal }}</small></p>
+
+{{ help_banner("用图表看学习进展",
+   "这里把花费、概念验证、各单元状态画成图，比一堆数字更直观。想看哪段，可以点上面的「7 天 / 30 天…」切换时间范围。") }}
+
+{% set c = stats.concept %}
+{% set cd = c.dist %}
+{% set k = stats.card %}
+{% set kd = k.dist %}
+{% set rv = stats.review %}
+
+<div class="grid">
+  <div class="card">
+    <h3>概念</h3>
+    <p class="text-muted">共 {{ c.total }} 个</p>
+    <p>
+      <span class="badge ok">已验证 {{ cd.get('已验证', 0) }}</span>
+      <span class="badge warn">待验证 {{ cd.get('待验证', 0) }}</span>
+      <span class="badge">未验证 {{ cd.get('未验证', 0) }}</span>
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>卡片</h3>
+    <p class="text-muted">共 {{ k.total }} 张</p>
+    <p>
+      <span class="badge ok">已验证 {{ kd.get('已验证', 0) }}</span>
+      <span class="badge warn">待验证 {{ kd.get('待验证', 0) }}</span>
+      <span class="badge">未验证 {{ kd.get('未验证', 0) }}</span>
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>复习队列</h3>
+    <p class="text-muted">待复测 / 逾期</p>
+    <p>
+      <span class="badge info">活跃 {{ rv.active }}</span>
+      <span class="badge err">逾期 {{ rv.overdue }}</span>
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>累计花费</h3>
+    <p class="text-muted">LLM 调用成本</p>
+    <p style="font-size:var(--fs-xl); font-weight:700;">{{ "%.4f"|format(stats.cost_total) }}</p>
+  </div>
+
+  <div class="card">
+    <h3>单元</h3>
+    <p class="text-muted">学习单元总数</p>
+    <p style="font-size:var(--fs-xl); font-weight:700;">{{ stats.unit_count }}</p>
+  </div>
+</div>
+
+<h2>花费趋势（近 {{ days }} 天）</h2>
+<div class="range-links" role="group" aria-label="区间选择">
+  <span class="text-muted">区间：</span>
+  <a href="/stats?days=7" class="{{ 'active' if days == 7 }}">7 天</a>
+  <a href="/stats?days=30" class="{{ 'active' if days == 30 }}">30 天</a>
+  <a href="/stats?days=90" class="{{ 'active' if days == 90 }}">90 天</a>
+  <a href="/stats?days=180" class="{{ 'active' if days == 180 }}">180 天</a>
+</div>
+<div class="card">
+  {% if stats.cost_max > 0 %}
+  <svg width="100%" viewBox="0 0 600 160" preserveAspectRatio="none" style="border:1px solid var(--border); background:var(--surface-2); border-radius:var(--r-md);">
+    <line x1="0" y1="140" x2="600" y2="140" stroke="var(--border-strong)" stroke-width="1"></line>
+    {% set bw = 600 / stats.cost_series|length %}
+    {% for s in stats.cost_series %}
+      {% set h = (s.cost / stats.cost_max * 120) if stats.cost_max > 0 else 0 %}
+      <rect x="{{ loop.index0 * bw }}" y="{{ 140 - h }}" width="{{ bw - 1 }}" height="{{ h }}" fill="#2563eb" opacity="0.85">
+        <title>{{ s.date }}：{{ "%.4f"|format(s.cost) }}</title>
+      </rect>
+    {% endfor %}
+  </svg>
+  <p class="text-muted">每日 LLM 花费合计（货币单位随记账）；峰值 {{ "%.4f"|format(stats.cost_max) }}。</p>
+  {% else %}
+  <p class="ok">近 {{ days }} 天暂无花费记录。</p>
+  {% endif %}
+</div>
+
+<h2>概念验证时间线（近 {{ days }} 天）</h2>
+<div class="card">
+  {% if stats.verify_max > 0 %}
+  <svg width="100%" viewBox="0 0 600 160" preserveAspectRatio="none" style="border:1px solid var(--border); background:var(--surface-2); border-radius:var(--r-md);">
+    <line x1="0" y1="140" x2="600" y2="140" stroke="var(--border-strong)" stroke-width="1"></line>
+    {% set vmax = stats.verify_max %}
+    {% set vw = 600 / stats.verify_timeline|length %}
+    {% for s in stats.verify_timeline %}
+      {% set h = (s.count / vmax * 120) if vmax > 0 else 0 %}
+      <line x1="{{ loop.index0 * vw }}" y1="{{ 140 - h }}" x2="{{ loop.index0 * vw }}" y2="140" stroke="#0a7d2c" stroke-width="2" opacity="0.7">
+        <title>{{ s.date }}：验证 {{ s.count }} 个</title>
+      </line>
+      <circle cx="{{ loop.index0 * vw }}" cy="{{ 140 - h }}" r="2.5" fill="#0a7d2c">
+        <title>{{ s.date }}：验证 {{ s.count }} 个</title>
+      </circle>
+    {% endfor %}
+  </svg>
+  <p class="text-muted">每日完成复测验证的概念数；窗口内累计验证 <b>{{ stats.verify_total }}</b> 个，单日峰值 {{ stats.verify_max }} 个。</p>
+  {% else %}
+  <p class="ok">近 {{ days }} 天暂无概念验证记录（概念经复测写回 last_verified_at 后才会计入）。</p>
+  {% endif %}
+</div>
+
+<h2>单元维度细分</h2>
+<div class="grid">
+  <div class="card">
+    <h3>按状态</h3>
+    <p>
+      {% for st, c in stats.unit_breakdown.status.items() %}
+      {{ state_badge(st) }} <span class="text-muted">{{ c }}</span>
+      {% endfor %}
+    </p>
+  </div>
+  <div class="card">
+    <h3>按难度带</h3>
+    <p>
+      {% for df, c in stats.unit_breakdown.difficulty.items() %}
+      <span class="badge info">{{ df }} {{ c }}</span>
+      {% endfor %}
+    </p>
+  </div>
+  <div class="card">
+    <h3>产出与降级</h3>
+    <p>
+      <span class="badge ok">已产出 {{ stats.unit_breakdown.produced }}</span>
+      <span class="badge warn">曾降级 {{ stats.unit_breakdown.degraded }}</span>
+      <span class="badge">单元总数 {{ stats.unit_breakdown.total }}</span>
+    </p>
+  </div>
+</div>
+
+<p class="mt-lg"><a href="/graph">查看概念图</a> · <a href="/review">去复测</a> · <a href="/">返回首页</a></p>
+{% endif %}
+{% endblock %}

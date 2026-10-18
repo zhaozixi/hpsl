@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner, cost_badge %}
+{% block title %}HPSL · 预算{% endblock %}
+{% block content %}
+
+{% if error %}
+  <div class="notice">{{ error }}</div>
+  <p><a href="/">返回首页选择或新建项目</a></p>
+{% else %}
+
+<h1>预算 · {{ project.name }}</h1>
+<p><small>目标：{{ project.goal }}</small></p>
+
+{{ help_banner("花了多少钱一目了然",
+   "HPSL 在调用 AI 模型时会消耗费用。这里按「每次学习会话」统计花费，并用颜色提醒你是否快超预算了：绿色正常、黄色临近上限、红色已超限。") }}
+
+<section>
+  <h2>会话预算状态（{{ rows|length }}）</h2>
+  {% if rows %}
+  <table id="budget-table" class="table">
+    <tr><th>会话</th><th>累计(USD)</th><th>上限</th><th>状态</th><th>确认次数</th></tr>
+    {% for r in rows %}
+    <tr id="budget-{{ r.session.id }}">
+      <td>{{ r.session.id }}</td>
+      <td>{{ r.cost.cumulative_usd }}</td>
+      <td>{{ r.cost.budget_cap_usd }}</td>
+      <td>{{ cost_badge(r.cost.status) }}</td>
+      <td>{{ r.cost.confirmations }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="ok">暂无会话记录。</p>
+  {% endif %}
+</section>
+
+{% if blocked %}
+<section>
+  <h2>超限待确认（A080001）</h2>
+  {% for b in blocked %}
+    {% set session_id = b.session.id %}
+    {% set cost = b.cost %}
+    {% include "_quota_modal.html" %}
+  {% endfor %}
+</section>
+{% endif %}
+
+<p><a href="/">返回首页</a></p>
+{% endif %}
+{% endblock %}

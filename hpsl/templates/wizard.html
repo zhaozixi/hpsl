@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner %}
+{% block title %}HPSL · 首次启动向导{% endblock %}
+{% block content %}
+<h1>首次启动向导</h1>
+<p class="sub">四步带你完成第一次上手：建项目 → 填密钥 → 测连接 → 开始学习。</p>
+
+{{ help_banner("跟着四步走，几分钟就能用起来",
+   "第一次用？不用懂技术。按下面顺序做：① 建项目 ② 填模型密钥 ③ 测一下能不能连上 ④ 开始学习。每一步都有提示。") }}
+
+{% if not active %}
+<div class="banner warn">尚未选择项目：请先完成第一步「创建项目」，向导会自动切换到它。</div>
+{% else %}
+<div class="banner ok">当前项目：<b>{{ active.name }}</b>（{{ active.goal }}）</div>
+{% endif %}
+
+<div class="steps">
+  <!-- 步骤 1：建项目 -->
+  <section class="step" id="step-1">
+    <h2>第 1 步 · 创建项目</h2>
+    <label>项目名称 <input id="p-name" type="text" placeholder="例如：Python 数据分析入门"></label>
+    <label>学习目标 <input id="p-goal" type="text" placeholder="例如：能独立完成一份数据分析报告"></label>
+    <label>初始认识（可选）<textarea id="p-belief" rows="3" placeholder="你对这个主题目前的了解"></textarea></label>
+    <button id="btn-create" class="btn btn-primary" onclick="stepCreate()">创建并切换</button>
+    <div class="result" id="r-1"></div>
+  </section>
+
+  <!-- 步骤 2：填密钥 -->
+  <section class="step" id="step-2">
+    <h2>第 2 步 · 填写模型密钥</h2>
+    <label>用哪家模型（Provider）
+      <select id="p-provider">
+        {% for p in providers %}<option value="{{ p.provider }}">{{ p.display }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>API 密钥 <input id="p-key" type="password" placeholder="粘贴你的 API Key（相当于模型的登录密码）"></label>
+    <button id="btn-savekey" class="btn btn-primary" onclick="stepSaveKey()">保存密钥</button>
+    <div class="result" id="r-2"></div>
+  </section>
+
+  <!-- 步骤 3：测连接 -->
+  <section class="step" id="step-3">
+    <h2>第 3 步 · 测试连接</h2>
+    <p>用第 2 步所选的模型做一次最小探活，看看密钥和网络的连接是否正常。</p>
+    <button id="btn-test" class="btn btn-primary" onclick="stepTest()">测试连接</button>
+    <div class="result" id="r-3"></div>
+  </section>
+
+  <!-- 步骤 4：完成 -->
+  <section class="step" id="step-4">
+    <h2>第 4 步 · 开始学习</h2>
+    <p>一切就绪。下面进入正式学习流程：</p>
+    <p>
+      <a class="cta" href="/unit">进入单元学习 →</a>
+      <a class="cta" href="/ledger">查看四本账 →</a>
+    </p>
+  </section>
+</div>
+
+<script>
+function csrf() {
+  const c = document.cookie.split('; ').find(x => x.startsWith('hpsl_csrf='));
+  return c ? c.split('=')[1] : '';
+}
+async function api(method, url, body) {
+  const headers = { 'X-CSRF-Token': csrf(), 'Content-Type': 'application/json' };
+  const resp = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  let data = {};
+  try { data = await resp.json(); } catch (e) { data = { code: String(resp.status), msg: resp.statusText }; }
+  return { status: resp.status, data };
+}
+function show(id, txt, cls) {
+  const el = document.getElementById(id);
+  el.className = 'result ' + (cls || '');
+  el.textContent = txt;
+}
+async function stepCreate() {
+  const name = document.getElementById('p-name').value.trim();
+  const goal = document.getElementById('p-goal').value.trim();
+  const belief = document.getElementById('p-belief').value.trim();
+  if (!name || !goal) { show('r-1', '请填写项目名称和学习目标', 'err'); return; }
+  const r = await api('POST', '/api/v1/projects', { name, goal, initial_belief: belief || null });
+  if (r.data.code !== '0') { show('r-1', '创建失败：' + (r.data.msg || r.data.code), 'err'); return; }
+  const pid = r.data.data.id;
+  const s = await api('POST', '/api/v1/projects/' + pid + '/switch', {});
+  if (s.data.code !== '0') { show('r-1', '已创建但切换失败：' + (s.data.msg || ''), 'err'); return; }
+  show('r-1', '已创建并切换到项目：' + name, 'ok');
+  document.getElementById('step-2').scrollIntoView({ behavior: 'smooth' });
+}
+async function stepSaveKey() {
+  const provider = document.getElementById('p-provider').value;
+  const key = document.getElementById('p-key').value.trim();
+  if (!key) { show('r-2', '请填写 API 密钥', 'err'); return; }
+  const r = await api('PUT', '/api/v1/settings/keys/' + provider, { key });
+  if (r.data.code !== '0') { show('r-2', '保存失败：' + (r.data.msg || r.data.code), 'err'); return; }
+  const st = r.data.data;
+  show('r-2', '已保存；has_key=' + st.has_key + '，尾号 ' + (st.key_tail || '—') + '，存储=' + st.stored_in, 'ok');
+}
+async function stepTest() {
+  const provider = document.getElementById('p-provider').value;
+  const r = await api('POST', '/api/v1/providers/' + provider + '/test', {});
+  const d = r.data.data || {};
+  if (d.ok) { show('r-3', '连接成功：' + d.detail, 'ok'); }
+  else { show('r-3', '连接未通过：' + d.detail + (d.code ? '（' + d.code + '）' : ''), 'err'); }
+}
+</script>
+{% endblock %}

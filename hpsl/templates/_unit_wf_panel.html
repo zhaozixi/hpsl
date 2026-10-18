@@ -1,0 +1,19 @@
+{% from "macros.html" import state_badge %}
+<div id="wf-panel">
+  <p class="text-muted">学习像过一道道工序：每做到一定程度，就点下面的按钮，把这个单元推进到下一步。</p>
+  <p>当前状态：{{ state_badge(unit.status) }}</p>
+  {% if allowed_next %}
+  <form hx-post="/api/v1/units/{{ unit.id }}/move" hx-target="#wf-panel" hx-swap="outerHTML">
+    <input type="hidden" name="cur" value="{{ unit.status }}">
+    <input type="hidden" name="expected_version" value="{{ unit.status }}">
+    <p><label>跳过产出理由（进入验证时可填）：<input type="text" name="reason" class="input"></label></p>
+    <p>
+      {% for nxt in allowed_next %}
+      <button type="submit" class="btn btn-sm" name="nxt" value="{{ nxt }}">推进到 {{ nxt }}</button>
+      {% endfor %}
+    </p>
+  </form>
+  {% else %}
+  <p class="ok">已到终态，无可用转移。</p>
+  {% endif %}
+</div>

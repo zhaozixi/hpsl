@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner %}
+{% block title %}HPSL · 新建项目{% endblock %}
+{% block content %}
+<h1>新建项目</h1>
+
+{{ help_banner("新建一个学习项目",
+   "项目就是你想要学会的一件事。起个名字、写清目标，就可以开始。后续系统会帮你把目标拆成小单元。") }}
+
+<form class="card" hx-post="/api/v1/projects" hx-target="#result" hx-swap="innerHTML">
+  <p><label>名称<br><input class="input" name="name" required maxlength="100" size="40" placeholder="例如：Python 数据分析入门"></label></p>
+  <p><label>目标<br><textarea class="textarea" name="goal" required maxlength="500" rows="3" cols="60" placeholder="例如：能独立完成一份数据分析报告"></textarea></label></p>
+  <p><label>初版认识（可选）<br><textarea class="textarea" name="initial_belief" maxlength="2000" rows="4" cols="60" placeholder="你对这个主题目前的了解，学完后再回头看会很有意思"></textarea></label></p>
+  <button type="submit" class="btn btn-primary">创建</button>
+</form>
+<div id="result"></div>
+<p><a href="/">返回列表</a></p>
+{% endblock %}

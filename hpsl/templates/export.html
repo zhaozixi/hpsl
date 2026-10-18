@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner %}
+{% block title %}HPSL · 导出 Markdown{% endblock %}
+{% block content %}
+<h1>导出 Markdown</h1>
+<p class="sub">将当前项目的学习数据导出为干净、人读的 Markdown 文件，保存到项目 <code>exports/</code> 目录。</p>
+
+{{ help_banner("导出学习记录",
+   "把当前项目的学习数据整理成一份 Markdown 文档，方便你备份、打印或分享给别人看。点对应按钮即可生成。") }}
+
+{% if not active %}
+<div class="banner warn">尚未选择项目：请先在首页选择或新建项目，再使用导出功能。</div>
+{% else %}
+<div class="banner ok">当前项目：<b>{{ active.name }}</b>（{{ active.goal }}）</div>
+
+<div class="grid">
+  <section class="card">
+    <h2>项目概览</h2>
+    <p>项目名、目标、初始认识与配置摘要。</p>
+    <button class="cta" onclick="doExport('project', 'r-project')">导出 project.md</button>
+    <div class="result" id="r-project"></div>
+  </section>
+
+  <section class="card">
+    <h2>学习单元</h2>
+    <p>单元列表与状态（标题、状态、难度档、降级、跳过产出等）。</p>
+    <button class="cta" onclick="doExport('units', 'r-units')">导出 units.md</button>
+    <div class="result" id="r-units"></div>
+  </section>
+
+  <section class="card">
+    <h2>四本账</h2>
+    <p>审计日志、缺口、主张核验、复测与模型调用账本摘要。</p>
+    <button class="cta" onclick="doExport('ledger', 'r-ledger')">导出 ledger.md</button>
+    <div class="result" id="r-ledger"></div>
+  </section>
+
+  <section class="card">
+    <h2>概念图谱</h2>
+    <p>概念节点与概念之间的关系（concept_edge）。</p>
+    <button class="cta" onclick="doExport('concepts', 'r-concepts')">导出 concepts.md</button>
+    <div class="result" id="r-concepts"></div>
+  </section>
+</div>
+{% endif %}
+
+<script>
+function csrf() {
+  const c = document.cookie.split('; ').find(x => x.startsWith('hpsl_csrf='));
+  return c ? c.split('=')[1] : '';
+}
+async function doExport(kind, outId) {
+  const out = document.getElementById(outId);
+  out.className = 'result';
+  out.textContent = '导出中…';
+  try {
+    const resp = await fetch('/api/v1/export/' + kind, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrf(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await resp.json();
+    if (data.code !== '0') {
+      out.className = 'result err';
+      out.textContent = '导出失败：' + (data.msg || data.code);
+      return;
+    }
+    const d = data.data;
+    out.className = 'result ok';
+    out.textContent = '已导出：' + d.file + '（' + d.bytes + ' 字节） → ' + d.path;
+  } catch (e) {
+    out.className = 'result err';
+    out.textContent = '请求异常：' + e;
+  }
+}
+</script>
+{% endblock %}

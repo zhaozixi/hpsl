@@ -1,0 +1,8 @@
+<div id="cc-{{ cc.id }}">
+  <p><b>挑错：</b>{{ cc.claim }}（裁决：{{ cc.user_ruling or '未裁决' }}；residual={{ cc.residual }}）</p>
+  <form hx-post="/api/v1/units/{{ unit.id }}/claim-check/{{ cc.id }}/arbitrate" hx-target="#cc-{{ cc.id }}" hx-swap="outerHTML">
+    <button type="submit" class="btn btn-sm" name="ruling" value="采纳">采纳</button>
+    <button type="submit" class="btn btn-sm" name="ruling" value="驳回">驳回</button>
+    <button type="submit" class="btn btn-sm" name="ruling" value="待验证">待验证</button>
+  </form>
+</div>
