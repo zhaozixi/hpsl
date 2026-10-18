@@ -560,8 +560,8 @@ def write(pid: str, table: str, row: dict, actor: str) -> str:
 
     - table 必须 ∈ TABLES（audit_log 不在白名单，直写抛 KeyError）。
     - row 的键必须是 TABLES[table] 的子集。
-    - 必须提供主键 'id'。
-    - 成功返回 row_id；SQLITE_BUSY 耗尽 → B999002。
+    - 必须提供主键 'id'；**例外**：`turn` 为 INTEGER PK 追加表，可省略 id（由 SQLite 生成）。
+    - 成功返回 row_id（turn 为自增 id 的字符串）；SQLITE_BUSY 耗尽 → B999002。
     """
     if table not in TABLES:
         raise KeyError(f"未知表或审计表不在写白名单：{table!r}（audit_log 仅由 write 内部追加）")
@@ -571,20 +571,24 @@ def write(pid: str, table: str, row: dict, actor: str) -> str:
         raise ValueError(f"未知列 {sorted(unknown)} 不在表 {table} 白名单")
     if actor not in ("user", "clerk", "system"):
         raise ValueError(f"非法 actor：{actor!r}（仅允许 user/clerk/system）")
-    if "id" not in row:
+    # turn 是追加表（INTEGER PRIMARY KEY），允许省略 id；其余表必须显式给 id
+    if "id" not in row and table != "turn":
         raise ValueError(f"写入 {table} 必须提供主键 id")
 
     # D1：单写连接跨线程共享，事务体加锁序列化，防止 cursor 交错 / 嵌套 BEGIN。
     lock = _write_lock(pid)
     with lock:
         conn = get_write_conn(pid)
-        row_id = str(row["id"])
+        row_id = str(row["id"]) if "id" in row else None
 
         for _ in range(MAX_WRITE_RETRIES):
             try:
                 conn.execute("BEGIN IMMEDIATE")
-                prev_row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (row_id,)).fetchone()
-                prev = _decode_row(table, prev_row)
+                prev_row = None
+                prev = None
+                if row_id is not None:
+                    prev_row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (row_id,)).fetchone()
+                    prev = _decode_row(table, prev_row)
 
                 if prev_row is not None:
                     set_cols = [c for c in allowed if c != "id" and c in row]
@@ -595,9 +599,11 @@ def write(pid: str, table: str, row: dict, actor: str) -> str:
                     ins_cols = [c for c in allowed if c in row]
                     ph = ", ".join("?" for _ in ins_cols)
                     params = [_encode(table, c, row[c]) for c in ins_cols]
-                    conn.execute(
+                    cur = conn.execute(
                         f"INSERT INTO {table} ({', '.join(ins_cols)}) VALUES ({ph})", params
                     )
+                    if row_id is None:  # turn：取 SQLite 生成的自增 id
+                        row_id = str(cur.lastrowid)
 
                 # 同事务追加审计：change=完整新行快照，prev=旧行（INSERT 为 NULL）
                 new_row = _decode_row(
@@ -619,6 +625,59 @@ def write(pid: str, table: str, row: dict, actor: str) -> str:
                     continue  # 排队串行重试，禁止静默覆盖（D-03）
                 raise
         raise BizError("B999002")
+
+
+def append_turn(
+    pid: str,
+    session_id: str,
+    role: str,
+    content: str,
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    actor: str = "system",
+) -> str:
+    """追加一轮对话到 `turn`（INTEGER PK，id 由 SQLite 生成）。
+
+    与 `write` 同事务审计；返回自增 id 的字符串。零 DDL。
+    """
+    return write(
+        pid,
+        "turn",
+        {
+            "session_id": session_id,
+            "role": role,
+            "content": content,
+            "provider": provider,
+            "model": model,
+            "ts": _now_utc(),
+        },
+        actor,
+    )
+
+
+def list_turns(
+    pid: str,
+    *,
+    unit_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    limit: int = 200,
+) -> list[dict]:
+    """按单元或会话读取对话轮次（只读；按 id 升序=时间序）。"""
+    if session_id is not None:
+        return query(
+            pid,
+            "SELECT * FROM turn WHERE session_id=? ORDER BY id ASC LIMIT ?",
+            (session_id, int(limit)),
+        )
+    if unit_id is not None:
+        return query(
+            pid,
+            "SELECT t.* FROM turn t JOIN session s ON t.session_id=s.id "
+            "WHERE s.unit_id=? ORDER BY t.id ASC LIMIT ?",
+            (unit_id, int(limit)),
+        )
+    return query(pid, "SELECT * FROM turn ORDER BY id ASC LIMIT ?", (int(limit),))
 
 
 # ---------------------------------------------------------------------------

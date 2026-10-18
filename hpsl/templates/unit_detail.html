@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import help_banner, state_badge, gap_badge, field %}
+{% from "macros.html" import help_banner, state_badge, gap_badge, field, role_label %}
 {% block title %}HPSL · 单元详情{% endblock %}
 {% block content %}
 
@@ -144,6 +144,23 @@
     </div>
   {% else %}
     <p class="ok">本单元暂无挑错记录（空态）。</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>⑨ 会话记录</h2>
+  {% if turns %}
+    {% for t in turns %}
+    <div class="card" id="turn-{{ t.id }}">
+      <p>
+        <b>{{ role_label(t.role) }}</b>
+        <small class="text-muted">{{ t.ts }}{% if t.model %} · {{ t.provider }}/{{ t.model }}{% endif %}</small>
+      </p>
+      <pre class="pre-wrap">{{ t.content }}</pre>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="ok">还没有对话记录。用上面的「AI 辅助」发一次，就会出现在这里。</p>
   {% endif %}
 </section>
 

@@ -131,6 +131,7 @@ def unit_detail_page(req: Request, uid: str):
     allowed_next = _allowed_next(status)
     gaps = [g.to_dict() for g in lg.list_gaps(pid, unit_id=uid)]
     claim_checks = db.query(pid, "SELECT * FROM claim_check WHERE unit_id=?", (uid,))
+    turns = db.list_turns(pid, unit_id=uid, limit=100)
     return _TEMPLATES.TemplateResponse(
         request=req,
         name="unit_detail.html",
@@ -140,6 +141,7 @@ def unit_detail_page(req: Request, uid: str):
             "allowed_next": allowed_next,
             "gaps": gaps,
             "claim_checks": claim_checks,
+            "turns": turns,
         },
     )
 
@@ -171,12 +173,14 @@ def unit_detail_api(uid: str):
     allowed_next = _allowed_next(status)
     gaps = [g.to_dict() for g in lg.list_gaps(pid, unit_id=uid)]
     claim_checks = db.query(pid, "SELECT * FROM claim_check WHERE unit_id=?", (uid,))
+    turns = db.list_turns(pid, unit_id=uid, limit=100)
     return ok(
         {
             "unit": unit,
             "allowed_next": allowed_next,
             "gaps": gaps,
             "claim_checks": claim_checks,
+            "turns": turns,
         }
     )
 

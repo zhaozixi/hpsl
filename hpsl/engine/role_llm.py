@@ -75,17 +75,40 @@ def call_role(
     unit_id: Optional[str] = None,
     prompts_dir: Optional[str | Path] = None,
 ):
-    """角色调用的生产接线（P0）：组装 → 适配器 → 记账，返回 (Reply, CostEstimateVO)。
+    """角色调用的生产接线（P0）：组装 → 适配器 → 记账 → 落对话轮次。
 
     隔离纪律不变：上下文必须经 `assembler.assemble`（RoleLLM.build_system_prompt 内部完成），
     `answer_machine_output` 永远不进入 messages。
     记账经 `cost.record_call`（内部 `db.write` 写 llm_call，同事务审计）；
-    调用失败时异常向上抛（A040001/A040003/A040004），不会留下半条记账。
+    `turn` 表以 SQLite 自增 id 追加两行（user 输入 + 角色输出），便于会话回放。
+    调用失败时异常向上抛（A040001/A040003/A040004），不会留下半条记账或半轮对话。
     """
+    from .. import db
+    from ..models import registry
+    from ..projects import active_project
     from .cost import record_call
 
     llm = RoleLLM(adapter, prompts_dir=prompts_dir)
-    reply = llm.complete(role, context)
+    messages = llm.build_messages(role, context)
+    reply = adapter.complete(messages)
     role_value = role.value if isinstance(role, Role) else str(role)
     cost_vo = record_call(role_value, reply, session_id, unit_id)
+
+    active = active_project()
+    if active is not None:  # record_call 已保证激活项目存在；此处仅防御
+        try:
+            provider = registry.get_model(reply.model).provider
+        except KeyError:
+            provider = "unknown"
+        user_text = messages[-1].content if messages else ""
+        db.append_turn(active.id, session_id, "user", user_text, actor="user")
+        db.append_turn(
+            active.id,
+            session_id,
+            role_value,
+            reply.text,
+            provider=provider,
+            model=reply.model,
+            actor="system",
+        )
     return reply, cost_vo

@@ -153,6 +153,7 @@ async def role_call_api(req: Request, role: str):
             f'<p class="text-muted">tokens {cost_vo.tokens_in} / {cost_vo.tokens_out} · '
             f"本次 ${cost_vo.cost_usd:.6f} · 累计 ${cost_vo.cumulative_usd:.4f} · "
             f"预算 {cost_vo.status}</p></div>"
+            '<p><small><a href="">刷新页面查看完整会话记录</a></small></p>'
         )
     return ok(
         {

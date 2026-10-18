@@ -83,3 +83,17 @@
   <span class="field-value">{{ value if value is not none else "—" }}</span>
 </li>
 {% endmacro %}
+
+{# —— 对话轮次角色：内部角色名 → 日常称呼 —— #}
+{% macro role_label(r) %}
+{%- set m = {
+  "user": "我",
+  "answer_machine": "答案机",
+  "questioner": "提问者",
+  "boundary_setter": "出题者",
+  "critic": "挑错者",
+  "clerk": "书记员",
+  "topic_picker": "选题助手"
+} -%}
+{{ m.get(r, r) }}
+{% endmacro %}
