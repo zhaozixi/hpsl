@@ -86,6 +86,7 @@
   }
   document.addEventListener('htmx:responseError', function (evt) { toast(messageOf(evt.detail.xhr)); });
   document.addEventListener('htmx:sendError', function () { toast('网络不可达，请检查本地服务是否在运行'); });
+  window.hpslToast = toast;  // 供非 HTMX 的 fetch 流程（如项目切换）复用同一提示样式
 })();
 
 
@@ -98,4 +99,36 @@
       modals[i].remove();
     }
   });
+})();
+
+
+// 项目切换：服务重启后 active 句柄会丢失，用户需要一个「回到某个项目」的入口。
+// 走 POST /api/v1/projects/{pid}/switch（写接口，需 Origin + X-CSRF-Token 双提交）。
+(function () {
+  function csrfToken() {
+    var parts = document.cookie.split('; ');
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].indexOf('hpsl_csrf=') === 0) return parts[i].slice('hpsl_csrf='.length);
+    }
+    return '';
+  }
+  window.hpslSwitchProject = function (pid, btn) {
+    var label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '切换中…'; }
+    function restore() {
+      if (btn) { btn.disabled = false; btn.textContent = label || '切换到此项目'; }
+    }
+    fetch('/api/v1/projects/' + encodeURIComponent(pid) + '/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+      body: '{}'
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.code === '0') { window.location.href = '/unit'; return; }
+      restore();
+      if (window.hpslToast) { window.hpslToast('切换失败：' + ((d && d.msg) || '未知错误')); }
+    }).catch(function () {
+      restore();
+      if (window.hpslToast) { window.hpslToast('切换失败：网络或服务异常'); }
+    });
+  };
 })();

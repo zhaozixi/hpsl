@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import help_banner, state_badge, gap_badge, field, role_label %}
+{% from "macros.html" import help_banner, state_badge, state_name, gap_badge, field, role_label, bool_badge %}
 {% block title %}HPSL · 单元详情{% endblock %}
 {% block content %}
 
@@ -23,8 +23,8 @@
     {{ field("降级次数", unit.degrade_count, "被判定「没掌握、需要重来」的次数") }}
     {{ field("产出内容", unit.production, "你亲手写出或做出的成果") }}
     {{ field("产出时间", unit.produced_at, "产出完成的时间") }}
-    {{ field("是否跳过产出", unit.skipped_produce, "是否跳过了「动手做」这一步") }}
-    {{ field("是否强制闭环", unit.forced_close, "是否在没走完流程的情况下被标记完成") }}
+    {{ field("是否跳过产出", bool_badge(unit.skipped_produce, "已跳过", "未跳过"), "是否跳过了「动手做」这一步") }}
+    {{ field("是否强制闭环", bool_badge(unit.forced_close, "是（强行闭环）", "否", true), "是否在没走完流程的情况下被标记完成") }}
     {{ field("闭环时间", unit.closed_at, "这个单元最终完成的时间") }}
   </ul>
 </section>
@@ -78,18 +78,7 @@
 <section>
   <h2>⑤ 判定闭环</h2>
   <p class="text-muted">达到通过阈值会自动闭环；未达标仍可强行闭环，但必须写理由，且该单元会带「强行闭环」标记、不计入进度。</p>
-  <form hx-post="/api/v1/units/{{ unit.id }}/close" hx-target="#wf-panel" hx-swap="outerHTML">
-    <p>
-      <label>确认得分（0–1）<br>
-        <input class="input" type="number" name="confirmed_score" step="0.01" min="0" max="1" required></label>
-    </p>
-    <p>
-      <label>强行闭环理由（仅未达标时填）<br>
-        <input class="input" type="text" name="close_reason" maxlength="500"></label>
-    </p>
-    <p><button class="btn btn-primary" type="submit">判定并闭环</button></p>
-  </form>
-  <div id="close-result"></div>
+  {% include "_unit_close_panel.html" %}
 </section>
 
 <section>

@@ -86,6 +86,10 @@
   <p class="hint">滚轮 / 双指缩放 · 拖拽空白平移 · 拖拽节点调整布局（自动保存）· 双击重置 · 点击节点查看详情</p>
   {% else %}
     <p class="ok">暂无概念节点，概念由学习产出流程生成。</p>
+    {# 空图仍输出锚点：下方脚本无条件绑定事件，元素缺失会让整段初始化中断 #}
+    <svg id="concept-graph" width="0" height="0" style="display:none"
+         xmlns="http://www.w3.org/2000/svg"><g id="viewport"></g></svg>
+    <div id="graph-tooltip"></div>
   {% endif %}
 </section>
 

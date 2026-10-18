@@ -82,6 +82,52 @@ def _is_htmx(req: Request) -> bool:
     return req.headers.get("hx-request") is not None
 
 
+def _local_ts(value):
+    """UTC ISO 串 → 本地时间 `YYYY-MM-DD HH:MM`；无法解析时原样返回。"""
+    if not value or not isinstance(value, str):
+        return value
+    try:
+        from datetime import datetime, timezone
+
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M")
+    except (ValueError, OSError):
+        return value
+
+
+def _close_panel_oob(uid: str, status: str) -> str:
+    """渲染「判定闭环」区并标记 OOB 替换。
+
+    该区的**可操作态**由状态派生（仅 JUDGE 可提交），而工作流面板走局部替换；
+    若不随之刷新，推进到 JUDGE 后闭环按钮会一直停留在禁用态，单元无法闭环。
+    """
+    body = _TEMPLATES.env.get_template("_unit_close_panel.html").render(
+        unit={"id": uid, "status": status}
+    )
+    return body.replace('<div id="close-panel">', '<div id="close-panel" hx-swap-oob="true">', 1)
+
+
+def _wf_panel_error(req: Request, pid: str, uid: str, msg: str, fallback_status: str):
+    """HTMX 面板操作失败时，仍返回带 `#wf-panel` 锚点的片段。
+
+    面板用 `hx-swap="outerHTML"` 替换，若失败直接回 JSON（或裸错误片段），
+    锚点会被顶掉、后续所有按钮消失。这里按库中真实状态重建面板并附错误文案。
+    """
+    rows = db.query(pid, "SELECT status FROM unit WHERE id=?", (uid,))
+    status = rows[0]["status"] if rows else fallback_status
+    return _TEMPLATES.TemplateResponse(
+        request=req,
+        name="_unit_wf_panel.html",
+        context={
+            "unit": {"id": uid, "status": status},
+            "allowed_next": _allowed_next(status),
+            "error": msg,
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # 页面：GET /unit（单元索引）
 # ---------------------------------------------------------------------------
@@ -127,6 +173,11 @@ def unit_detail_page(req: Request, uid: str):
             context={"project": active.to_dict(), "error": f"单元 {uid} 不存在"},
         )
     unit = rows[0]
+    # 时间戳在库里是 UTC ISO 串；页面直接展示会让人误读时区，这里换成本地时间
+    # （REST API 仍返回原始 ISO，便于程序处理）
+    for _k in ("produced_at", "closed_at", "created_at"):
+        if _k in unit:
+            unit[_k] = _local_ts(unit[_k])
     status = unit["status"]
     allowed_next = _allowed_next(status)
     gaps = [g.to_dict() for g in lg.list_gaps(pid, unit_id=uid)]
@@ -202,22 +253,29 @@ async def move_unit_api(req: Request, uid: str):
     expected_version = (
         data.get("expected_version") if isinstance(data.get("expected_version"), str) else None
     )
-    vo = st.move(
-        pid,
-        uid,
-        cur,
-        nxt,
-        reason=reason,
-        actor="user",
-        expected_version=expected_version,
-    )
+    try:
+        vo = st.move(
+            pid,
+            uid,
+            cur,
+            nxt,
+            reason=reason,
+            actor="user",
+            expected_version=expected_version,
+        )
+    except BizError as exc:
+        if not _is_htmx(req):
+            raise
+        return _wf_panel_error(req, pid, uid, exc.msg, cur)
     result = vo.to_dict()
     if _is_htmx(req):
-        return _TEMPLATES.TemplateResponse(
+        panel = _TEMPLATES.TemplateResponse(
             request=req,
             name="_unit_wf_panel.html",
             context={"unit": {"id": uid, "status": result["status"]}, "allowed_next": result["allowed_next"]},
         )
+        # 闭环区依赖当前状态（仅 JUDGE 可闭环），面板是局部替换，必须同步刷新
+        return HTMLResponse(panel.body.decode("utf-8") + _close_panel_oob(uid, result["status"]))
     return ok(result)
 
 
@@ -389,16 +447,21 @@ async def close_unit_api(req: Request, uid: str):
     same_source = data.get("same_source")
     if same_source not in (True, False, None):
         same_source = None
-    vo = gr.close_unit(
-        pid,
-        uid,
-        score,
-        force_close=bool(data.get("force_close")),
-        close_reason=reason,
-        is_keypoint=bool(data.get("is_keypoint")),
-        same_source=same_source,
-        explicit_confirm=bool(data.get("explicit_confirm")),
-    )
+    try:
+        vo = gr.close_unit(
+            pid,
+            uid,
+            score,
+            force_close=bool(data.get("force_close")),
+            close_reason=reason,
+            is_keypoint=bool(data.get("is_keypoint")),
+            same_source=same_source,
+            explicit_confirm=bool(data.get("explicit_confirm")),
+        )
+    except BizError as exc:
+        if not _is_htmx(req):
+            raise
+        return _wf_panel_error(req, pid, uid, exc.msg, "JUDGE")
     enqueued = gr.enqueue_unit_reviews(pid, uid)
     payload = vo.to_dict()
     payload["reviews_enqueued"] = len(enqueued)
@@ -417,7 +480,10 @@ async def close_unit_api(req: Request, uid: str):
             if enqueued
             else "已闭环；本单元尚未关联概念，暂无复测。"
         )
-        oob = f'<div id="close-result" hx-swap-oob="true"><p class="ok">{msg}</p></div>'
+        # 先整体替换闭环区（离开 JUDGE 后表单应消失），再单独塞入结果提示；
+        # 顺序不可颠倒，否则提示会被随后整体替换的空白 #close-result 清掉。
+        oob = _close_panel_oob(uid, payload["status"])
+        oob += f'<div id="close-result" hx-swap-oob="true"><p class="ok">{msg}</p></div>'
         return HTMLResponse(panel.body.decode("utf-8") + oob)
     return ok(payload)
 

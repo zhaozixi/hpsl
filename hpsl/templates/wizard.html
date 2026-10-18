@@ -9,9 +9,9 @@
    "第一次用？不用懂技术。按下面顺序做：① 建项目 ② 填模型密钥 ③ 测一下能不能连上 ④ 开始学习。每一步都有提示。") }}
 
 {% if not active %}
-<div class="banner warn">尚未选择项目：请先完成第一步「创建项目」，向导会自动切换到它。</div>
+<div class="banner warn" id="active-banner">尚未选择项目：请先完成第一步「创建项目」，向导会自动切换到它。</div>
 {% else %}
-<div class="banner ok">当前项目：<b>{{ active.name }}</b>（{{ active.goal }}）</div>
+<div class="banner ok" id="active-banner">当前项目：<b>{{ active.name }}</b>（{{ active.goal }}）</div>
 {% endif %}
 
 <div class="steps">
@@ -85,16 +85,31 @@ async function stepCreate() {
   const s = await api('POST', '/api/v1/projects/' + pid + '/switch', {});
   if (s.data.code !== '0') { show('r-1', '已创建但切换失败：' + (s.data.msg || ''), 'err'); return; }
   show('r-1', '已创建并切换到项目：' + name, 'ok');
+  // 同步页面顶部横幅（服务端渲染的 active 只在整页加载时更新，此处需就地刷新）
+  const banner = document.getElementById('active-banner');
+  if (banner) {
+    banner.className = 'banner ok';
+    banner.textContent = '当前项目：';
+    const nameEl = document.createElement('b');
+    nameEl.textContent = name;
+    banner.appendChild(nameEl);
+    banner.appendChild(document.createTextNode('（' + goal + '）'));
+  }
   document.getElementById('step-2').scrollIntoView({ behavior: 'smooth' });
 }
 async function stepSaveKey() {
-  const provider = document.getElementById('p-provider').value;
+  const sel = document.getElementById('p-provider');
+  const provider = sel.value;
+  const providerLabel = ((sel.options[sel.selectedIndex] || {}).text || provider).trim();
   const key = document.getElementById('p-key').value.trim();
   if (!key) { show('r-2', '请填写 API 密钥', 'err'); return; }
   const r = await api('PUT', '/api/v1/settings/keys/' + provider, { key });
   if (r.data.code !== '0') { show('r-2', '保存失败：' + (r.data.msg || r.data.code), 'err'); return; }
   const st = r.data.data;
-  show('r-2', '已保存；has_key=' + st.has_key + '，尾号 ' + (st.key_tail || '—') + '，存储=' + st.stored_in, 'ok');
+  const where = st.stored_in === 'keyring' ? '系统钥匙串'
+    : st.stored_in === 'fernet_file' ? '本地加密文件'
+    : '未知位置';
+  show('r-2', '已保存 ' + providerLabel + '的密钥：尾号 ' + (st.key_tail || '未记录') + '，存放在' + where + '。', 'ok');
 }
 async function stepTest() {
   const provider = document.getElementById('p-provider').value;

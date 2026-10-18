@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import html as _html
 import os
 import sys
 from pathlib import Path
@@ -20,7 +21,7 @@ from typing import Callable
 
 try:
     from fastapi import FastAPI, Request
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import HTMLResponse, JSONResponse
     from fastapi.staticfiles import StaticFiles
 except ImportError:  # M0 阶段允许在无 fastapi 环境下导入本模块（仅占位）
     FastAPI = None  # type: ignore
@@ -101,9 +102,17 @@ if FastAPI is not None:
         app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
     @app.exception_handler(BizError)
-    def _biz_error_handler(request: Request, exc: BizError) -> JSONResponse:
-        """业务/系统/客户端错误统一回显为 Result.to_dict()，HTTP 状态取 exc.http_status；携带 traceId。"""
+    def _biz_error_handler(request: Request, exc: BizError):
+        """业务/系统/客户端错误按调用方分流。
+
+        - 普通 REST：回显 Result.to_dict()，HTTP 状态取 exc.http_status，携带 traceId。
+        - HTMX 片段请求：返回人读 HTML 片段。**状态码固定 200**——HTMX 默认只 swap 2xx，
+          若沿用 4xx/5xx 会导致错误被静默丢弃，用户点了没反应。错误码仍写进文案，便于排查。
+        """
         tid = getattr(request.state, "trace_id", None)
+        if request.headers.get("hx-request") is not None:
+            body = f'<p class="result err">{_html.escape(exc.msg)}（{exc.code}）</p>'
+            return HTMLResponse(content=body, status_code=200)
         return JSONResponse(status_code=exc.http_status, content=fail(exc.code, trace_id=tid).to_dict())
 
     @app.get("/healthz")

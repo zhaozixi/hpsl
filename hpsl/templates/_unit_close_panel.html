@@ -1,0 +1,24 @@
+{% from "macros.html" import state_name %}
+{# 判定闭环区：随状态变化。整页渲染时 include，状态推进后由 move 端点以 OOB 方式替换。
+   表单常驻（保持页面结构稳定、便于用户知道有这一步），仅 JUDGE 状态可操作。 #}
+<div id="close-panel">
+  <form hx-post="/api/v1/units/{{ unit.id }}/close" hx-target="#wf-panel" hx-swap="outerHTML">
+    <p>
+      <label>确认得分（0–1）<br>
+        <input class="input" type="number" name="confirmed_score" step="0.01" min="0" max="1" required
+               {% if unit.status != 'JUDGE' %}disabled{% endif %}></label>
+    </p>
+    <p>
+      <label>强行闭环理由（仅未达标时填）<br>
+        <input class="input" type="text" name="close_reason" maxlength="500"
+               {% if unit.status != 'JUDGE' %}disabled{% endif %}></label>
+    </p>
+    <p><button class="btn btn-primary" type="submit" {% if unit.status != 'JUDGE' %}disabled{% endif %}>判定并闭环</button></p>
+  </form>
+  {% if unit.status in ('INTEGRATE', 'CLOSED') %}
+  <p class="ok">该单元已闭环（当前：{{ state_name(unit.status) }}），无需再次判定。</p>
+  {% elif unit.status != 'JUDGE' %}
+  <p class="result">当前状态是「{{ state_name(unit.status) }}」，还不能闭环。请先用上方工作流把单元推进到「评判中」，再回到这里判定。</p>
+  {% endif %}
+  <div id="close-result"></div>
+</div>

@@ -6,6 +6,12 @@
 <p><strong>目标：</strong>{{ project.goal }}</p>
 <p><small>创建时间：{{ project.created_at }}</small></p>
 
+{% if is_active %}
+<p><span class="badge ok">当前使用中</span> <a href="/unit">进入学习 →</a></p>
+{% else %}
+<p><button class="btn btn-sm" type="button" onclick="hpslSwitchProject('{{ project.id }}', this)">切换到此项目</button></p>
+{% endif %}
+
 {{ help_banner("项目详情",
    "这里记着你当初对这个主题的认识，以及当前生效的各项设置。普通学习用不到，想了解进度时可以翻翻。") }}
 

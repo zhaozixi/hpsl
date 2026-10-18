@@ -28,7 +28,7 @@
   "INIT": "未开始", "PICK": "选题中", "LEARN": "学习中", "PRODUCE": "产出中",
   "VERIFY": "验证中", "JUDGE": "评判中", "INTEGRATE": "整合中", "CLOSED": "已完成"
 } -%}
-{{ m.get(s, s) }}
+{{- m.get(s, s) -}}
 {% endmacro %}
 
 {# —— 缺口级别：1/2/3 → 轻微 / 一般 / 严重 —— #}
@@ -85,7 +85,7 @@
   "answer_machine": "答案机", "questioner": "提问者", "boundary_setter": "出题者",
   "topic_picker": "选题助手"
 } -%}
-{{ m.get(a, a) }}
+{{- m.get(a, a) -}}
 {% endmacro %}
 
 {# —— 审计目标表名：库表名 → 中文业务对象 —— #}
@@ -97,13 +97,13 @@
   "turn": "对话轮次", "project_config": "项目配置", "source": "知识源",
   "audit_log": "操作审计", "cost_confirm": "超限确认"
 } -%}
-{{ m.get(t, t) }}
+{{- m.get(t, t) -}}
 {% endmacro %}
 
 {# —— 知识源类型：folder / file → 中文 —— #}
 {% macro source_kind_label(k) %}
 {%- set m = {"folder": "文件夹", "file": "文件", "url": "网页"} -%}
-{{ m.get(k, k) }}
+{{- m.get(k, k) -}}
 {% endmacro %}
 
 {# —— 模块说明横幅：每个页面顶部放一句大白话，告诉用户「这是干嘛的、怎么用」 —— #}
@@ -143,5 +143,5 @@
   "clerk": "书记员",
   "topic_picker": "选题助手"
 } -%}
-{{ m.get(r, r) }}
+{{- m.get(r, r) -}}
 {% endmacro %}

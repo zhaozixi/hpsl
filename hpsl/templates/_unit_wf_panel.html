@@ -1,5 +1,6 @@
 {% from "macros.html" import state_badge, state_name %}
 <div id="wf-panel">
+  {% if error %}<p class="result err">{{ error }}</p>{% endif %}
   <p class="text-muted">学习像过一道道工序：每做到一定程度，就点下面的按钮，把这个单元推进到下一步。</p>
   <p>当前状态：{{ state_badge(unit.status) }}</p>
   {% if allowed_next %}

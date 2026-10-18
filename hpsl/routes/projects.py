@@ -151,8 +151,14 @@ def backup_api(pid: str, req: Request):
 @page_router.get("/")
 def index_page(req: Request):
     projects = proj.list_projects()
+    active = proj.active_project()
     return _TEMPLATES.TemplateResponse(
-        request=req, name="index.html", context={"projects": [p.to_dict() for p in projects]}
+        request=req,
+        name="index.html",
+        context={
+            "projects": [p.to_dict() for p in projects],
+            "active_id": active.id if active else None,
+        },
     )
 
 
@@ -165,10 +171,15 @@ def new_page(req: Request):
 def detail_page(req: Request, pid: str):
     vo = _require_project(pid)
     cfg = proj.get_effective_config(pid)
+    active = proj.active_project()
     return _TEMPLATES.TemplateResponse(
         request=req,
         name="project_detail.html",
-        context={"project": vo.to_dict(), "config": cfg.to_dict()},
+        context={
+            "project": vo.to_dict(),
+            "config": cfg.to_dict(),
+            "is_active": bool(active and active.id == pid),
+        },
     )
 
 
