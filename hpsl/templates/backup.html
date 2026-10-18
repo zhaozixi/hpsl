@@ -24,6 +24,7 @@
 
 <section>
   <h2>历史快照（<span id="backup-count">{{ backups|length }}</span>）</h2>
+  <p><small>需要回滚时，点每份快照右侧的「恢复」；会二次确认，并在覆盖前自动留底当前库。</small></p>
   <div id="backup-list">{% include "_backup_list.html" %}</div>
 </section>
 

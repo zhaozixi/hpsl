@@ -1,5 +1,6 @@
 {% from "macros.html" import bool_badge %}
 <div id="cc-{{ cc.id }}">
+  {% if error %}<p class="result err">{{ error }}（{{ error_code }}）</p>{% endif %}
   {%- set res = (cc.residual or 0) | int -%}
   <p><b>挑错：</b>{{ cc.claim }}（裁决：{{ cc.user_ruling or '未裁决' }}；残留实质错误：{{ bool_badge(res, "有（需处理）", "无", true) }}）</p>
   <form hx-post="/api/v1/units/{{ unit.id }}/claim-check/{{ cc.id }}/arbitrate" hx-target="#cc-{{ cc.id }}" hx-swap="outerHTML">

@@ -25,6 +25,8 @@
   .node.selected circle { stroke:var(--text); stroke-width:2.5; }
   .node.selected text { font-weight:700; }
   .node.search-hit circle { stroke:var(--info-bd); stroke-width:3; }
+  .node:focus { outline:none; }
+  .node:focus-visible circle { stroke:var(--info-bd); stroke-width:3; }
   .node.dim, .edge.dim { opacity:0.12; }
   .edge line { transition: opacity .2s ease, stroke-width .2s ease; }
   .edge-label { font-size:10px; fill:var(--text-muted); }
@@ -66,7 +68,7 @@
       </g>
       {% endfor %}
       {% for nd in nodes %}
-      <g class="node" id="node-{{ nd.id }}" data-id="{{ nd.id }}" data-status="{{ nd.verify_status }}">
+      <g class="node" id="node-{{ nd.id }}" data-id="{{ nd.id }}" data-status="{{ nd.verify_status }}" tabindex="0" role="button" aria-label="概念：{{ nd.name }}，验证状态：{{ nd.verify_status }}">
         <circle cx="{{ nd.x }}" cy="{{ nd.y }}" r="7" fill="#9ca3af">
           <title>{{ nd.name }} · {{ nd.verify_status }}</title>
         </circle>
@@ -80,7 +82,7 @@
   <div class="legend">
     <span><span class="dot" style="background:#0a7d2c"></span>已验证</span>
     <span><span class="dot" style="background:#9ca3af"></span>未验证</span>
-    <span><span class="dot" style="background:#f59e0b"></span>待验证</span>
+    <span><span class="dot" style="background:#b45309"></span>待验证</span>
     <span><span class="dot" style="background:#888"></span>关系连线（标注关系类型）</span>
   </div>
   <p class="hint">滚轮 / 双指缩放 · 拖拽空白平移 · 拖拽节点调整布局（自动保存）· 双击重置 · 点击节点查看详情</p>
@@ -90,6 +92,7 @@
     <svg id="concept-graph" width="0" height="0" style="display:none"
          xmlns="http://www.w3.org/2000/svg"><g id="viewport"></g></svg>
     <div id="graph-tooltip"></div>
+    <div id="graph-detail">暂无概念节点。概念来自学习产出流程，先完成一个单元的学习与验证，这里就会出现关系图。</div>
   {% endif %}
 </section>
 
@@ -109,7 +112,7 @@ function csrf() {
 }
 let dragNode = null, dragDX = 0, dragDY = 0;
 
-const STATUS_COLORS = { '已验证': '#0a7d2c', '待验证': '#f59e0b', '未验证': '#9ca3af' };
+const STATUS_COLORS = { '已验证': '#0a7d2c', '待验证': '#b45309', '未验证': '#9ca3af' };
 function statusColor(s) { return STATUS_COLORS[s] || '#9ca3af'; }
 function nodeName(id) { const n = NODES.find(function (x) { return x.id === id; }); return (n ? n.name : id) || id; }
 
@@ -144,6 +147,7 @@ svg.addEventListener('pointermove', function (e) {
       const t = g.querySelector('text');
       if (t) { t.setAttribute('x', dragNode.x); t.setAttribute('y', dragNode.y - 12); }
     }
+    updateEdges();
     return;
   }
   if (!dragging) { return; }
@@ -243,6 +247,15 @@ vp.addEventListener('click', function (e) {
   if (g) { selectNode(g.getAttribute('data-id')); }
 });
 
+// 键盘操作：节点带 tabindex="0"（可 Tab 聚焦），Enter / Space 与鼠标点击走同一选择路径。
+vp.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') { return; }
+  var g = e.target.closest && e.target.closest('.node');
+  if (!g) { return; }
+  e.preventDefault();  // Space 不再滚动页面
+  selectNode(g.getAttribute('data-id'));
+});
+
 // 悬停提示（M27：改用 textContent 构建，避免概念名/时间里的 HTML 被解释）
 function showTooltip(g) {
   const id = g.getAttribute('data-id');
@@ -306,6 +319,26 @@ function onSearchKey(e) {
   }
 }
 
+// 连线随节点坐标重算（拖拽 / 自动布局 / 分层布局后都必须调用，否则线停在服务端坐标）
+function updateEdges() {
+  const pos = {};
+  NODES.forEach(function (n) { pos[n.id] = n; });
+  EDGES.forEach(function (ed, i) {
+    const g = document.getElementById('edge-' + (i + 1));
+    if (!g) { return; }
+    const line = g.querySelector('line');
+    const label = g.querySelector('.edge-label');
+    const a = pos[ed.src], b = pos[ed.dst];
+    if (!line || !a || !b) { return; }
+    line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+    line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+    if (label) {
+      label.setAttribute('x', (a.x + b.x) / 2);
+      label.setAttribute('y', (a.y + b.y) / 2 - 4);
+    }
+  });
+}
+
 function render() {
   const nb = selectedId ? neighbors(selectedId) : null;
   const t = searchTerm.trim().toLowerCase();
@@ -330,12 +363,14 @@ function render() {
     }
     g.classList.toggle('dim', !inc);
   });
+  updateEdges();
   applyStatusColors();
   updateDetail();
 }
 
 function updateDetail() {
   const d = document.getElementById('graph-detail');
+  if (!d) { return; }  // 空态/局部渲染时可能没有详情锚点
   d.textContent = '';
   if (!selectedId) {
     d.textContent = '点击任意节点查看概念详情与关联；悬停查看状态；滚轮/双指或 ＋－ 缩放。';

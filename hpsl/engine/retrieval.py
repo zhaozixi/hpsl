@@ -21,8 +21,8 @@
 - `chunk_fts` 是检索专用虚表，按 M0 说明允许独立写入入口：在 `db._write_lock(pid)` 内用
   `db.get_write_conn(pid)` 直接 DELETE/INSERT，同一事务提交。
 - `delete_source` 需删除 `source` 行，而 `db.write` 只支持 INSERT/UPDATE；故在同一写锁事务内
-  直接 DELETE `source` + `chunk_fts`，并**同事务**追加 audit_log（prev=被删行快照），
-  与 M0 撤销/审计语义保持一致。全程零 DDL，`count_user_objects` 恒为 16。
+  直接 DELETE `source` + `chunk_fts`，并**同事务**追加 audit_log（change/prev 均为被删行完整快照），
+  与 M0 撤销/审计语义保持一致（undo 可据此恢复 source 行）。全程零 DDL，`count_user_objects` 恒为 16。
 
 错误码：不新增，仅复用 C400001（参数/路径校验）。
 """
@@ -492,7 +492,7 @@ def delete_source(pid: str, source_id: str) -> dict:
     """删除来源及其 FTS 索引（source 行 + chunk_fts 行，同事务并留痕 audit_log）。
 
     `db.write` 不支持 DELETE，故在 `_write_lock(pid)` 内直接删除：同事务删除 `source` 行、
-    `chunk_fts` 行，并追加 audit_log（prev=被删 source 行快照）。零 DDL。
+    `chunk_fts` 行，并追加 audit_log（change/prev 均为被删 source 行完整快照）。零 DDL。
     不存在 → C400001（复用参数校验码，不新增错误码）。
     """
     if not isinstance(source_id, str) or not source_id.strip():
@@ -522,7 +522,10 @@ def delete_source(pid: str, source_id: str) -> dict:
                     "user",
                     "source",
                     sid,
-                    json.dumps({"deleted": True, "chunks": int(chunks)}, ensure_ascii=False),
+                    # change 必须是完整被删行快照（与 prev 相同），db.undo 才能把「行已不存在
+                    # 且 change==prev」识别为删除类审计并恢复该行；旧实现写 {"deleted": ...}
+                    # 会被 undo 判为指纹冲突（A070002）。
+                    json.dumps(prev, ensure_ascii=False),
                     json.dumps(prev, ensure_ascii=False),
                 ),
             )

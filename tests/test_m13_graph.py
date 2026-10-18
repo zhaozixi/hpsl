@@ -62,10 +62,10 @@ def test_graph_status_legend_present(client, csrf_headers):
     _create_and_switch(client, csrf_headers)
     r = client.get("/graph")
     assert r.status_code == 200
-    # 三态图例色块：已验证=绿 / 未验证=灰 / 待验证=琥珀
+    # 三态图例色块：已验证=绿 / 未验证=灰 / 待验证=深琥珀（≥4.5:1 白字对比）
     assert "#0a7d2c" in r.text
     assert "#9ca3af" in r.text
-    assert "#f59e0b" in r.text
+    assert "#b45309" in r.text
 
 
 def test_graph_existing_contract_unchanged(client, csrf_headers):

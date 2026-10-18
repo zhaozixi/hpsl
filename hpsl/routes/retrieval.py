@@ -16,13 +16,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from .. import projects as proj
 from ..common.errors import BizError
 from ..common.result import ok
 from ..engine import retrieval
+from ._htmx import refresh_with_toast
 from .security import read_security, write_security
 
 api_router = APIRouter(prefix="/api/v1")
@@ -71,10 +71,9 @@ async def create_source_api(req: Request):
     force = str(body.get("force", "")).lower() in ("1", "true", "yes", "on")
     result = retrieval.index_source(_require_pid(), path, force=force)
     if _is_htmx(req):
-        return HTMLResponse(
-            f"<p class='ok'>已索引 {result.get('files_indexed', 0)} 个变更文件、"
-            f"删除 {result.get('files_removed', 0)} 个、共 {result.get('chunks', 0)} 个片段</p>",
-            headers={"HX-Refresh": "true"},
+        return refresh_with_toast(
+            f"已索引 {result.get('files_indexed', 0)} 个变更文件、"
+            f"删除 {result.get('files_removed', 0)} 个、共 {result.get('chunks', 0)} 个片段"
         )
     return ok(result)
 
@@ -118,9 +117,7 @@ def delete_source_api(sid: str, req: Request):
         raise BizError("C400001", msg="source_id 不能为空")
     result = retrieval.delete_source(_require_pid(), sid)
     if _is_htmx(req):
-        return HTMLResponse(
-            "<p class='ok'>已删除该来源</p>", headers={"HX-Refresh": "true"}
-        )
+        return refresh_with_toast("已删除该来源")
     return ok(result)
 
 

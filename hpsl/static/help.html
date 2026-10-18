@@ -15,7 +15,7 @@
     })();
   </script>
   <style>
-    .help-wrap{max-width:880px; margin:0 auto; padding:0 var(--sp-4) var(--sp-10);}
+    .help-wrap{max-width:880px; margin:0 auto; padding:0 var(--sp-4) var(--sp-8);}
     .help-toc{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:var(--sp-4) var(--sp-5); margin-bottom:var(--sp-6);}
     .help-toc ol{margin:var(--sp-2) 0 0; padding-left:var(--sp-5);}
     .help-toc li{margin:var(--sp-1) 0;}
@@ -31,6 +31,7 @@
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
   <header class="site-header">
     <div class="site-header-inner">
       <a class="brand" href="/">HPSL 学习管家</a>
@@ -38,7 +39,7 @@
     </div>
   </header>
 
-  <main class="container help-wrap">
+  <main id="main" class="container help-wrap">
     <h1>HPSL 学习管家 · 操作手册</h1>
     <p class="text-muted">写给第一次用、看不懂界面上那些词的朋友。全程不用懂技术，跟着做就行。</p>
 
@@ -153,7 +154,10 @@
       <h2>4. 界面名词对照表</h2>
       <p>界面上有些词你可能没见过，这里对照成日常说法：</p>
       <table class="gloss">
-        <tr><th>界面上的词</th><th>意思（大白话）</th></tr>
+        <thead>
+          <tr><th scope="col">界面上的词</th><th scope="col">意思（大白话）</th></tr>
+        </thead>
+        <tbody>
         <tr><td>未开始 / INIT</td><td>刚建立，还没开始动手</td></tr>
         <tr><td>选题中 / PICK</td><td>正在挑要攻克的知识点</td></tr>
         <tr><td>学习中 / LEARN</td><td>正在阅读、理解相关内容</td></tr>
@@ -168,6 +172,7 @@
         <tr><td>复测</td><td>隔段时间回来巩固复习</td></tr>
         <tr><td>预算 / 花费</td><td>调用 AI 模型产生的费用</td></tr>
         <tr><td>正常 / 临近上限 / 已超限</td><td>花费在预算内 / 快到顶了 / 已超，需确认</td></tr>
+        </tbody>
       </table>
     </section>
 
@@ -193,6 +198,7 @@
     </section>
 
     <a class="btn btn-primary back-home" href="/">← 返回首页开始使用</a>
+    <p class="text-muted"><a href="/">返回应用</a></p>
   </main>
 </body>
 </html>

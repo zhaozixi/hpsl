@@ -6,8 +6,8 @@
 - 建库即创建全部 16 个库对象（15 表 + chunk_fts FTS5 虚表），user_version=1，幂等。
 - write(table, row, actor)：白名单校验 → BEGIN IMMEDIATE → UPDATE/INSERT（禁用 REPLACE）
   → 同事务追加 audit_log → COMMIT；SQLITE_BUSY 排队重试，耗尽 → B999002。
-- undo(audit_id, actor)：校验旧值指纹 → 按 prev 回滚（prev=None 则删行）→ 撤销本身留痕；
-  指纹不匹配 → A070002。
+- undo(audit_id, actor)：校验当前行/旧值指纹（任一匹配）→ 按 prev 回滚（prev=None 则删行）
+  → 撤销本身留痕；指纹不匹配 → A070002。
 
 纪律（冻结）：不引入 ORM；值一律参数绑定；表名/列名只允许来自 TABLES 白名单（防注入 T-06）。
 """
@@ -456,6 +456,8 @@ def backup_project(
 # 备份文件命名前缀与安全正则：仅本系统生成的 `project-YYYY-MM-DD...db` 参与轮转
 _BACKUP_PREFIX = "project-"
 _BACKUP_RE = re.compile(r"^project-(\d{4})-(\d{2})-(\d{2})")
+# 恢复留底前缀（restore_project 生成；独立于 project-* 轮转，由 cleanup_pre_restore 限量保留）
+_PRE_RESTORE_PREFIX = "pre-restore-"
 
 
 def list_backups(pid: str, dest_dir: Optional[Path] = None) -> list[str]:
@@ -532,10 +534,39 @@ def rotate_backups(
     return deleted
 
 
-def rotate_all_backups(keep_daily: int = 7, keep_monthly: int = 12) -> dict[str, list[str]]:
+def cleanup_pre_restore(
+    pid: str, keep: int = 3, dest_dir: Optional[Path] = None
+) -> list[str]:
+    """清理恢复留底 `pre-restore-*.db`：仅保留最近 keep 份（默认 3），其余删除。
+
+    - 与 `rotate_backups` 的 `project-*` 规则完全独立：只匹配 `pre-restore-` 前缀 + `.db`，
+      绝不触碰项目快照、project.db 或其它文件（零 DDL，仅文件级操作）。
+    - 文件名以 UTC 时间戳开头，字典序即时间序；倒序保留最新 keep 份。
+    - 返回被删除的文件名列表（空列表表示无需清理）。
+    """
+    d = Path(dest_dir) if dest_dir is not None else _config.project_dir(pid) / "backups"
+    if not d.is_dir():
+        return []
+    files = [p for p in d.glob(f"{_PRE_RESTORE_PREFIX}*.db") if p.is_file()]
+    files.sort(key=lambda p: p.name, reverse=True)
+    deleted: list[str] = []
+    for p in files[max(0, int(keep)) :]:
+        try:
+            p.unlink()
+            deleted.append(p.name)
+        except OSError:
+            pass
+    return deleted
+
+
+def rotate_all_backups(
+    keep_daily: int = 7, keep_monthly: int = 12, keep_pre_restore: int = 3
+) -> dict[str, list[str]]:
     """对所有项目执行备份轮转（零 DDL，仅删外部快照；best-effort）。
 
     - 遍历 projects.list_projects()，对每个项目调用 rotate_backups（前缀/正则双重保护）。
+    - 追加清理恢复留底 `pre-restore-*.db`（仅保留最近 keep_pre_restore 份，默认 3）；
+      与 project-* 的日/月保留规则互不影响。
     - 单个项目失败不影响其他项目。
     - 返回 {pid: 被删文件列表}；无清理则不含该 pid。
     """
@@ -547,6 +578,7 @@ def rotate_all_backups(keep_daily: int = 7, keep_monthly: int = 12) -> dict[str,
             continue
         try:
             deleted = rotate_backups(pid, keep_daily=keep_daily, keep_monthly=keep_monthly)
+            deleted += cleanup_pre_restore(pid, keep=keep_pre_restore)
             if deleted:
                 result[pid] = deleted
         except Exception:
@@ -658,7 +690,7 @@ def restore_project(pid: str, backup_file: str) -> dict:
 
     # 当前库留底（存在时）：先 checkpoint 把 WAL 合入主库，保证留底完整
     ts = "-".join(_now_utc().split(":"))
-    pre_restore_path = base / f"pre-restore-{ts}-{uuid.uuid4().hex[:8]}.db"
+    pre_restore_path = base / f"{_PRE_RESTORE_PREFIX}{ts}-{uuid.uuid4().hex[:8]}.db"
     try:
         get_write_conn(pid).execute("PRAGMA wal_checkpoint(TRUNCATE)")
     except Exception:
@@ -850,7 +882,10 @@ def undo(pid: str, audit_id: int, actor: str = "user", expected_prev_hash: Optio
     """撤销某条审计对应的业务写入。
 
     - 读 audit_log；不存在 → A070001。
-    - 旧值指纹不匹配（行已被后续变更）或 expected_prev_hash 与当前行不一致 → A070002。
+    - 冲突检测：当前行须与该审计写入后的快照（change）一致；删除类审计（当前行已不存在，
+      且 change 与 prev 同为被删行快照）同样可识别 → 恢复 prev 行。
+    - `expected_prev_hash` 语义为 DTO 所述「旧值指纹」：**当前行指纹或 prev 行指纹任一匹配即接受**
+      （兼容把 change/当前快照当期望值的旧调用方式）；两者都不匹配 → A070002。
     - 回滚：prev=None 则删除目标行；否则恢复 prev 全列。
     - 撤销动作本身写一条 audit_log（actor=user）。
     """
@@ -881,13 +916,20 @@ def undo(pid: str, audit_id: int, actor: str = "user", expected_prev_hash: Optio
                 cur_row = conn.execute(f"SELECT * FROM {table_name} WHERE id=?", (row_id,)).fetchone()
                 current = _decode_row(table_name, cur_row)
 
-                # 冲突检测：当前行 ≠ 该审计记录写入后的快照 → 已被后续变更
                 current_fp = _row_fingerprint(current)
                 change_fp = _row_fingerprint(change)
-                if current_fp != change_fp:
+                prev_fp = _row_fingerprint(prev)
+
+                # 冲突检测：
+                # 1) 普通写入/更新：当前行 == 该审计写入后的快照；
+                # 2) 删除类审计（如 retrieval.delete_source）：当前行已不存在，且 change 记录的是
+                #    被删行完整快照（与 prev 相同）→ 识别为可恢复的删除，而非「已被后续变更」。
+                deleted_snapshot = current is None and prev is not None and change_fp == prev_fp
+                if current_fp != change_fp and not deleted_snapshot:
                     conn.execute("ROLLBACK")
                     raise BizError("A070002")
-                if expected_prev_hash is not None and current_fp != expected_prev_hash:
+                # DTO 的「旧值指纹」：当前行或 prev 行任一匹配即可（兼容旧调用传当前快照）。
+                if expected_prev_hash is not None and expected_prev_hash not in (current_fp, prev_fp):
                     conn.execute("ROLLBACK")
                     raise BizError("A070002")
 

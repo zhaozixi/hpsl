@@ -7,8 +7,7 @@
 - 零 DDL：`count_user_objects == 16`；
 - 空白上下文：角色调用不读账本/单元字段；答案机仍映射 question；input-preview 同口径。
 
-说明：路由由主代理统一挂载到 `hpsl/app.py`；本文件在测试环境按需补挂（已挂载则跳过），
-保证单文件可独立跑通且不会重复注册。
+说明：路由由 `hpsl/app.py` 统一挂载（B10：测试不在 import 期重复 include_router）。
 """
 
 import uuid
@@ -16,13 +15,8 @@ import uuid
 import pytest
 
 from hpsl import db
-from hpsl.app import app
 from hpsl.models.base import Reply
-from hpsl.routes import retrieval as retrieval_routes
 from hpsl.routes import roles as roles_routes
-
-if not any(getattr(r, "path", None) == "/api/v1/sources" for r in app.routes):
-    app.include_router(retrieval_routes.api_router)
 
 
 # ---------------------------------------------------------------------------

@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from .. import db, projects as proj
@@ -103,7 +102,23 @@ async def budget_confirm_api(req: Request):
     session_id = data.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         raise BizError("C400001", msg="缺少 session_id（确认放行的会话）")
-    sc = cost.confirm_continue(session_id, actor="user")
+    try:
+        sc = cost.confirm_continue(session_id, actor="user")
+    except BizError as exc:
+        # M36/P1-B4：失败仍用带 #quota-modal-{session_id} 锚点的弹层片段，
+        # 避免 outerHTML 把锚点整个顶掉后用户无处重试。
+        if not _is_htmx(req):
+            raise
+        return _TEMPLATES.TemplateResponse(
+            request=req,
+            name="_quota_modal.html",
+            context={
+                "session_id": session_id,
+                "cost": None,
+                "error": exc.msg,
+                "error_code": exc.code,
+            },
+        )
     result = sc.to_dict()
     if _is_htmx(req):
         # 确认后弹层收起：返回该会话更新后的状态块（status 应已 blocked→warn）

@@ -13,13 +13,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse
 
 from .. import db, projects as proj
 from ..common.errors import BizError
 from ..common.result import ok
 from ..engine import cost as cost_engine
 from ..engine import ledger as ledger_engine
+from ._htmx import refresh_with_toast
 from .security import read_security, write_security
 
 api_router = APIRouter(prefix="/api/v1")
@@ -98,9 +98,7 @@ async def audit_undo_api(req: Request, audit_id: int):
         raise BizError("C400001", msg="expected_prev_hash 须为字符串或省略")
     db.undo(pid, audit_id, actor="user", expected_prev_hash=expected)
     if _is_htmx(req):
-        return HTMLResponse(
-            f"<p class='ok'>已撤销 #{audit_id}</p>", headers={"HX-Refresh": "true"}
-        )
+        return refresh_with_toast(f"已撤销 #{audit_id}")
     return ok({"audit_id": audit_id, "undone": True})
 
 

@@ -98,7 +98,8 @@ def test_undo_htmx_refreshes(client, csrf_headers):
     h = {**csrf_headers, "HX-Request": "true"}
     r = client.post(f"/api/v1/audit/{aid}/undo", headers=h)
     assert r.status_code == 200
-    assert r.headers.get("HX-Refresh") == "true"
+    assert r.headers.get("HX-Refresh") is None
+    assert "hpsl:refresh" in r.headers.get("HX-Trigger", "")
     assert "已撤销" in r.text
 
 

@@ -1,6 +1,6 @@
 # HPSL · 本地个人学习管家
 
-HPSL（项目制学习框架工具，Apache-2.0）是一个**本地运行的个人学习管家**：把学习目标拆成单元，按「学 → 练 → 考 → 复习」带流程推进，并记账（AI 花费）、记卡片、画概念图，用治理度量呈现学习进展。当前为 v0.1，已推进至 **M1–M32**。
+HPSL（项目制学习框架工具，Apache-2.0）是一个**本地运行的个人学习管家**：把学习目标拆成单元，按「学 → 练 → 考 → 复习」带流程推进，并记账（AI 花费）、记卡片、画概念图，用治理度量呈现学习进展。当前为 v0.1，已推进至 **M1–M36**。
 
 ## 技术栈（实现期冻结）
 
@@ -52,7 +52,7 @@ hpsl serve --no-restore
 # export HPSL_NO_RESTORE_ACTIVE=1                       # bash
 # $env:HPSL_NO_RESTORE_ACTIVE = "1"                     # PowerShell
 
-# 运行全量测试（M0–M35，594 例通过 + 3 例跳过，含零 DDL 守护）
+# 运行全量测试（M0–M36：664 例通过 + 3 例跳过，含零 DDL 守护）
 .venv/Scripts/python.exe -m pytest -q
 ```
 
@@ -89,7 +89,7 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 安全：本地单机单用户、回环监听；Host/Origin **精确匹配**（含端口）+ 写请求 CSRF 双提交 + 五维限流（process/route/llm_freq/sse_concurrency/write_freq）；无账号体系、无多租户；`/docs` 等文档端点关闭。
 - 密钥：keyring 优先；否则 `HPSL_MASTER_PASSPHRASE` + Argon2id(64MiB/3/4) + **每文件随机 salt**，无口令即拒绝（不降级明文），口令不落盘、不入日志/导出。
 
-## 当前能力（M1–M35）
+## 当前能力（M1–M36）
 
 - 多项目数据底座与审计（M0）
 - 单元八步状态机（INIT → … → CLOSED）+ 复测队列（2/7/21 天）（M2 / M6）
@@ -120,3 +120,6 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 收尾与工程债：版本 0.1.0、启用范围收敛为国内三家、11 个在用模型全部定价、界面术语中文化、备份页 OOB 局部刷新、前端脚本 `node --check` 真校验、密钥跨进程链路验证、打包自检脚本（M33）
 - 浏览器实测修复：项目切换入口、HTMX 错误片段化（裸 JSON 不再顶掉面板）、闭环区随状态同步、概念图空态、向导横幅/文案就地刷新、宏空白控制（M34）
 - 启动体验：恢复上次所在项目（只读 `last_active_at`，`--no-restore` 可关）、顶栏常驻「当前项目」、错误提示分层（中文结论 + 「技术细节」折叠）、建单元列表就地更新、向导原生表单校验、详情页配置改中文表格（M35）
+- 回归修复（行为级）：预算闸门真实拦截（角色/直连调用前校验，超限 A080001）、页面可强行闭环并留理由、复测正常到期可进 21 天档、`serve --port` 与 Host 白名单对齐、概念图空态与布局后连线重算（M36 P0）
+- 错误与交互收口：REST 保留自定义错误文案、`HX-Refresh` 改局部刷新、未捕获异常统一兜底、布尔表单解析、撤销指纹口径（M36 P1）
+- 基线与契约收口：CHG-05/CHG-07 补登记（3 家厂商 / 66 端点 / A080002）、新增 `tests/test_contracts.py` 补齐七类测试守护、REF-1/REF-2/README/操作手册数字回填（M36 P2）

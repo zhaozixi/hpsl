@@ -8,7 +8,7 @@ REST（api_router，prefix=/api/v1）：
 页面（page_router，Jinja2 + HTMX）：
 - GET /weekly：周盘点页。列出 level∈{2,3} 且 status=待补 的缺口（含单元标题）与 level=1 积压，
   每行一个 `select[name=status]`（仅 已补 / 废弃），HTMX 表单提交到 /api/v1/gaps/status-batch，
-  成功后由服务端返回 `HX-Refresh: true` 整页刷新。
+  成功后返回提示片段 + `HX-Trigger: hpsl:refresh`（先提示再整页刷新）。
 
 纪律（冻结）：
 - 零 DDL：只读 concept / 写既有 gap 表（经 db.write 唯一入口，同事务审计）；16 库对象不变。
@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from .. import db, projects as proj
@@ -32,6 +31,7 @@ from ..common.errors import BizError
 from ..common.result import ok
 from ..db import _now_utc
 from ..engine import decay, governance
+from ._htmx import refresh_with_toast
 from .security import read_security, write_security
 
 api_router = APIRouter(prefix="/api/v1")
@@ -59,12 +59,9 @@ def _is_htmx(req: Request) -> bool:
     return req.headers.get("hx-request") is not None
 
 
-def _batch_fragment(updated: int, skipped: int) -> HTMLResponse:
-    """HTMX 批量提交成功片段：提示 + HX-Refresh 触发整页刷新（页面重新拉取待补列表）。"""
-    return HTMLResponse(
-        f"<p class='ok'>已更新 {updated} 条缺口，跳过 {skipped} 条；正在刷新…</p>",
-        headers={"HX-Refresh": "true"},
-    )
+def _batch_fragment(updated: int, skipped: int):
+    """HTMX 批量提交成功片段：提示 + HX-Trigger 触发「提示后刷新」。"""
+    return refresh_with_toast(f"已更新 {updated} 条缺口，跳过 {skipped} 条；正在刷新…")
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +250,7 @@ async def gaps_status_batch_api(req: Request):
 
     - status 仅允许 已补 / 已验证 / 废弃；非法 → C400001（先全量校验，避免部分写入）。
     - 不存在的 id 安全跳过（幂等重放），计入 skipped；同一 id 重复出现只处理一次。
-    - 返回 {"updated": n, "skipped": m}；HTMX 请求额外返回 HX-Refresh: true。
+    - 返回 {"updated": n, "skipped": m}；HTMX 请求额外返回提示片段 + HX-Trigger。
     """
     pid = _require_pid()
     raw_items = await _parse_batch_items(req)
@@ -374,9 +371,7 @@ def gaps_undefer_api(gid: str, req: Request):
         "user",
     )
     if _is_htmx(req):
-        return HTMLResponse(
-            "<p class='ok'>已取消推迟，缺口回到本周清单</p>", headers={"HX-Refresh": "true"}
-        )
+        return refresh_with_toast("已取消推迟，缺口回到本周清单")
     return ok({"id": gid, "cleared": had})
 
 

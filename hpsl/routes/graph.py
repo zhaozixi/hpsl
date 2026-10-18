@@ -21,12 +21,12 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from .. import db, projects as proj, config as cfg
 from ..common.errors import BizError
 from ..common.result import ok
+from ._htmx import refresh_with_toast
 from .security import read_security, write_security
 
 page_router = APIRouter()
@@ -69,12 +69,6 @@ async def _parse_body(req: Request) -> dict:
 
 def _is_htmx(req: Request) -> bool:
     return req.headers.get("hx-request") is not None
-
-
-def _htmx_refresh(msg: str) -> HTMLResponse:
-    """HTMX 写成功：提示片段 + HX-Refresh 触发整页刷新。"""
-    return HTMLResponse(f"<p class='ok'>{msg}</p>", headers={"HX-Refresh": "true"})
-
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +254,7 @@ async def create_concept_api(req: Request):
     )
     payload = {"id": cid, "name": name, "verify_status": "未验证"}
     if _is_htmx(req):
-        return _htmx_refresh("已创建概念，正在刷新…")
+        return refresh_with_toast("已创建概念，正在刷新…")
     return ok(payload)
 
 
@@ -305,7 +299,7 @@ async def create_card_api(req: Request):
         "verify_status": "未验证",
     }
     if _is_htmx(req):
-        return _htmx_refresh("已创建卡片，正在刷新…")
+        return refresh_with_toast("已创建卡片，正在刷新…")
     return ok(payload)
 
 
@@ -343,7 +337,7 @@ async def create_concept_edge_api(req: Request):
     db.write(pid, "concept_edge", {"id": edge_id, "src": src, "dst": dst, "kind": kind}, "user")
     payload = {"id": edge_id, "src": src, "dst": dst, "kind": kind}
     if _is_htmx(req):
-        return _htmx_refresh("已创建概念边，正在刷新…")
+        return refresh_with_toast("已创建概念边，正在刷新…")
     return ok(payload)
 
 

@@ -9,15 +9,13 @@
   不存在 id 跳过、审计 actor=user；
 - 零 DDL（16 库对象不变）。
 
-路由挂载说明：按任务约束不编辑 hpsl/app.py，本文件在导入时幂等挂载 insight 的
-api_router / page_router（若主代理已在 app.py 挂载则自动跳过），保证测试自足。
+路由挂载说明：路由由 `hpsl/app.py` 统一挂载（B10：测试不在 import 期重复 include_router）。
 """
 
 import uuid
 
 from hpsl import db
 from hpsl import projects as proj
-from hpsl.app import app
 from hpsl.common.dto import ConfigVO, CountsVO
 from hpsl.engine.decay import (
     REVIEW_INTERVALS,
@@ -25,19 +23,6 @@ from hpsl.engine.decay import (
     effective_status,
 )
 from hpsl.engine.governance import compute_counts, counts_context, suggest_band
-from hpsl.routes import insight
-
-
-def _mount_routers_once() -> None:
-    """幂等挂载：app.py 未挂载时补挂，已挂载则跳过（不改 app.py 也能自测）。"""
-    paths = {getattr(route, "path", "") for route in app.routes}
-    if "/api/v1/bands" not in paths:
-        app.include_router(insight.api_router)
-    if "/weekly" not in paths:
-        app.include_router(insight.page_router)
-
-
-_mount_routers_once()
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +355,8 @@ def test_status_batch_htmx_form_refresh(client, csrf_headers):
         data={"gid": ["g1", "g2"], "status": ["已补", "废弃"]},
     )
     assert r.status_code == 200, r.text
-    assert r.headers.get("HX-Refresh") == "true"
+    assert r.headers.get("HX-Refresh") is None
+    assert "hpsl:refresh" in r.headers.get("HX-Trigger", "")
     assert "已更新 2 条缺口" in r.text
     assert _gap_status(pid, "g1") == "已补"
     assert _gap_status(pid, "g2") == "废弃"

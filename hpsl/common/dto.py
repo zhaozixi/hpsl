@@ -119,7 +119,8 @@ class UndoRequest:
     """撤销入参（§3.2.M7.3）。"""
 
     audit_id: int
-    expected_prev_hash: Optional[str] = None  # 旧值指纹；防止对已变更行误回滚
+    # 旧值指纹：当前行或 prev 行任一指纹匹配即接受（防止对已变更行误回滚）。
+    expected_prev_hash: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {"audit_id": self.audit_id, "expected_prev_hash": self.expected_prev_hash}

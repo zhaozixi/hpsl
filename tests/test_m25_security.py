@@ -178,12 +178,18 @@ def test_role_call_hits_llm_freq_limit(client, csrf_headers, monkeypatch):
 
 
 def test_sse_slot_release_on_exit():
+    # 临时把并发闸收到 1 验证互斥；无论断言是否失败，都在 finally 恢复 config 默认上限，
+    # 避免把进程级单例永久改成 1 而污染后续用例（B9）。
+    default = int(config.rate_limits().get("sse_concurrency", 2))
     security.sse_limiter.configure(1)
     gen = security.hold_sse_slot()
-    next(gen)
-    assert security.sse_limiter.active() == 1
-    with pytest.raises(BizError) as exc:
-        next(security.hold_sse_slot())
-    assert exc.value.code == "C429001"
-    gen.close()
+    try:
+        next(gen)
+        assert security.sse_limiter.active() == 1
+        with pytest.raises(BizError) as exc:
+            next(security.hold_sse_slot())
+        assert exc.value.code == "C429001"
+    finally:
+        gen.close()
+        security.sse_limiter.configure(default)
     assert security.sse_limiter.active() == 0

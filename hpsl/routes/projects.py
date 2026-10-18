@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
 from fastapi import APIRouter, Request, Depends
@@ -68,7 +69,12 @@ async def create_project_api(req: Request):
         raise BizError("C400001", msg=str(exc))
     vo = proj.create_project(pcr.name, pcr.goal, pcr.initial_belief, actor="user")
     if _is_htmx(req):
-        return HTMLResponse(f"<p class='ok'>已创建项目：{vo.name}</p>")
+        # M36/P1-B7：带上 data-project-id，create.html 才能在成功后自动调用 switch
+        # 写入 config.last_active_at（否则重启恢复不到刚建的项目）。
+        return HTMLResponse(
+            f'<p class="ok" data-project-id="{html.escape(vo.id, quote=True)}">'
+            f"已创建项目：{html.escape(vo.name)}</p>"
+        )
     return ok(vo.to_dict())
 
 

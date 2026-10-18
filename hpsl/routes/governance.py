@@ -10,7 +10,10 @@
 
 from __future__ import annotations
 
+import html
+
 from fastapi import APIRouter, Request, Depends
+from fastapi.responses import HTMLResponse
 
 from .. import projects as proj
 from ..common.errors import BizError
@@ -90,4 +93,14 @@ def dismiss_api(req: Request, prompt_id: str):
     dismissed.add(prompt_id)
     proj.set_config(pid, {"dismissed_prompts": sorted(dismissed)}, actor="user")
     active = _active_signals(pid)
+    if req.headers.get("hx-request") is not None:
+        # M36/P1-B3：HTMX 关闭走「结果区提示 + OOB 置空该行」。
+        # 旧实现由前端 after-request 无条件 remove()，而 BizError 在 HTMX 分支固定 200，
+        # 业务失败也会被当成成功删行——这里改由服务端在真正写成功后返回 OOB，
+        # 失败时只回全局错误片段（app.py 的 BizError 分支），行保持原样。
+        safe_id = html.escape(prompt_id, quote=True)
+        return HTMLResponse(
+            '<p class="ok">已忽略</p>'
+            f'<div id="prompt-{safe_id}" hx-swap-oob="true"></div>'
+        )
     return ok([s.to_dict() for s in active])

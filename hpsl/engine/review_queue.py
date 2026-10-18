@@ -300,7 +300,13 @@ def submit_review_by_id(
         actor,
     )
 
-    # 2) 写回 concept（verify_status / last_verified_at）
+    # 2) 先读旧 last_verified_at 并算当前档：必须在写回 concept **之前**，
+    #    否则读到的已是 now，due-now≈0 → cur_int 恒 1 → 下一档恒 7，21 天档永远到不了。
+    crows = db.query(pid, "SELECT last_verified_at FROM concept WHERE id=?", (cid,))
+    old_lva = crows[0]["last_verified_at"] if crows else None
+    cur_int = _interval_days(review["due"], old_lva)
+
+    # 3) 写回 concept（verify_status / last_verified_at）
     db.write(
         pid,
         "concept",
@@ -312,11 +318,8 @@ def submit_review_by_id(
         actor,
     )
 
-    # 3) 推进 review 的 due 到下一档（2→7→21→21），并回写 attempt_id；保持 review 活跃
+    # 4) 推进 review 的 due 到下一档（2→7→21→21），并回写 attempt_id；保持 review 活跃
     #    （result 维持 NULL，与 uk_review_active 唯一活跃行约束一致），复测结果以 attempt 为准。
-    crows = db.query(pid, "SELECT last_verified_at FROM concept WHERE id=?", (cid,))
-    old_lva = crows[0]["last_verified_at"] if crows else None
-    cur_int = _interval_days(review["due"], old_lva)
     new_due = _add_days(now, _next_interval(cur_int))
     db.write(
         pid,

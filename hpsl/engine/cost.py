@@ -225,6 +225,22 @@ def budget_status(session_id: str) -> str:
     return _status(cumulative, cap, confirmations)
 
 
+def ensure_budget(session_id: str) -> str:
+    """模型调用前的预算闸门：blocked → A080001（需用户确认后放行）。
+
+    M36/A1：此前 `budget_status` 只有展示方（quota），没有任何调用点，
+    导致「超预算未经确认不得继续调用」实际未执行。角色调用与 Provider 直连都应先过这里。
+    返回 ok/warn（便于调用方展示），blocked 直接抛业务错误。
+    """
+    status = budget_status(session_id)
+    if status == "blocked":
+        raise BizError(
+            "A080001",
+            msg="本月花费已达到上限，请先在「预算」页确认后继续调用模型",
+        )
+    return status
+
+
 def confirm_continue(session_id: str, actor: str = "user") -> CostEstimateVO:
     """超限确认后本会话放行并写审计留痕（§3.2.M8.4 序列图）。
 

@@ -1,8 +1,8 @@
 # HPSL 剩余开发清单（Roadmap）
 
-> 更新：2026-10-18（M35 启动体验批之后）
-> 基线：M0–M32 已交付 + M33 收尾批 + M34 浏览器实测批 + M35 启动体验批；全量 **594 passed / 3 skipped**
-> **P0 / P1 / P2 均已清零**；工程债 E-01～E-09 全部闭合或标注为环境受限。
+> 更新：2026-10-18（M36 REF-3 修复批之后）
+> 基线：M0–M36 已交付；全量 **664 passed / 3 skipped**
+> P0 / P1 / P2 中可修项已清零；剩余为 **C9（CSP/内联 JS）**、**C12（论文能力落差）** 与凭据/环境项。
 
 ---
 
@@ -29,25 +29,27 @@
 
 ---
 
-## 2. 工程债（M31 后）
+## 2. 工程债（M36 后）
 
 | # | 事项 | 状态 |
 |---|---|---|
-| E-01 | M12 / M22 专项测试 | ✅ 已完成（M31：token/模板继承 + 厂商矩阵/工厂/异构） |
-| E-02 | `serve()` / WAL checkpoint / FTS 边界 | ✅ 部分完成（M31：checkpoint/close_all/检索边界；`serve()` 仍靠 CLI 间接覆盖） |
-| E-03 | 前端行为测试 | ✅ 已完成（M33：`tests/test_m33_frontend.py` —— 抽出模板内联 `<script>` 交 `node --check` 真语法校验、渲染后校验注入 JSON 可解析、`innerHTML`/`tojson`/本地 HTMX 结构不变量；无 Node 时显式 skip，不伪装通过） |
-| E-04 | 环境与依赖 | ✅ 已完成（M33：`.venv` 重建为「系统盘 venv + 目录联接」，绕开 vendor python 作 base 的 venvlauncher 故障；`scripts/check_package.py` 离线构建 wheel 自检 PASS：98 条目 / 24 模板 / 6 提示 / 4 静态 / 2 YAML） |
-| E-05 | 知识库页面 | ✅ 已完成（M31：`/knowledge` 挂载/检索/删除 + 导航；**增量索引**按 mtime/size，`force` 可全量） |
-| E-06 | 衰减页面化 | ✅ 已完成（M31：卡片页显示衰减后状态与天数） |
-| E-07 | 周盘点增强 | ✅ 已完成（M31：推迟到下周 / 前置说明 / 取消推迟 / 一次提交，存 `gap.context`，零 DDL） |
-| E-08 | 真实 keyring / Anthropic key | ◐ 部分完成（M33：`tests/test_m33_keystore_e2e.py` 用子进程做**跨进程**密钥往返、密文 `HPSL2` 头与无明文断言、错口令显式失败、无口令拒绝写入、keyring 链路"有则用/无则明确回落"；真实钥匙环与真实 Anthropic key 仍受环境限制，且当前注册表已不启用国外厂商） |
-| E-09 | 文档一致性 | REF-2 保留历史描述行；delivery 按 CHG 维护 |
+| E-01 | M12 / M22 专项测试 | ✅ M31 |
+| E-02 | `serve()` / WAL / FTS 边界 | ✅ M31/M36（`_prepare_serve` 已测；WAL/检索边界已测） |
+| E-03 | 前端行为测试 | ◐ `node --check` + 模板结构；无浏览器 E2E 进套件 |
+| E-04 | 环境与依赖 | ✅ M33（C 盘 junction）；`pipx install .` 未实测 |
+| E-05 | 知识库页面 | ✅ M31（含增量索引） |
+| E-06 | 衰减页面化 | ✅ M31 |
+| E-07 | 周盘点增强 | ✅ M31 |
+| E-08 | 真实 keyring / 第二厂商 | ◐ 跨进程密钥已测；真实钥匙环/真实第二 key 受环境限制 |
+| E-09 | 文档一致性 | ✅ M36（REF-1/REF-2/README/M23 回填 + CHG-07） |
+| **C9** | **严格 CSP / 内联 JS 收敛** | ❌ 未做（独立批次；需外部化 22 handler、5 份 CSRF、5 段 script） |
+| **C12** | **论文能力落差** | ❌ 未做（新功能：结构化三问、自动 3 异构答案机、5 项指标） |
 
 ---
 
 ## 3. 发布前检查清单
 
-1. `pytest -q` ≥ 594 passed（3 skipped 为无内联脚本的模板，属预期）；
+1. `pytest -q` ≥ 664 passed（3 skipped 为无内联脚本的模板，属预期）；
 2. `python .workbuddy/delivery/verify_baseline.py` → `BASELINE INTACT`；
 3. `python scripts/check_package.py` → `结果: PASS`（验证 wheel 打全了模板/静态/提示/YAML）；
 4. `python scripts/live_check.py --model deepseek-flash --role clerk --stream` → 退出码 0；

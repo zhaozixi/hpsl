@@ -10,8 +10,7 @@
 - 零 DDL：全部操作后库对象仍为 16。
 
 全部使用 fake adapter（monkeypatch `registry.build_adapter`），不发真实网络请求。
-说明：按要求不编辑 `hpsl/app.py`，本测试在导入时把 `multi.api_router` 挂到全局 app；
-若装配方已在 app.py 挂载（路径已存在）则跳过，避免重复注册。
+路由由 `hpsl/app.py` 统一挂载（B10：测试不在 import 期重复 include_router）。
 """
 
 import json
@@ -19,11 +18,9 @@ import json
 import pytest
 
 from hpsl import db
-from hpsl.app import app
 from hpsl.engine import claim_check as cc
 from hpsl.models import registry as model_registry
 from hpsl.models.base import Reply
-from hpsl.routes import multi as multi_routes
 
 # 模型（当前 models.yaml 只启用国内三家）：
 #   answer=deepseek-chat 与 same_src=deepseek-reasoner 同 family（且同 derived_from）→ 同源；
@@ -31,11 +28,6 @@ from hpsl.routes import multi as multi_routes
 ANSWER = "deepseek-chat"
 OTHER = "qwen-plus"
 SAME_SRC = "deepseek-reasoner"  # 与 ANSWER 同 family → 同源
-
-# 不编辑 app.py：测试自行挂载 multi router（装配方已挂载则跳过）
-_MULTI_PATH = "/api/v1/units/{uid}/critic/multi"
-if _MULTI_PATH not in {getattr(r, "path", None) for r in app.routes}:
-    app.include_router(multi_routes.api_router)
 
 
 class _FakeAdapter:

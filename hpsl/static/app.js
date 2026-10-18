@@ -90,6 +90,18 @@
 })();
 
 
+// 成功提示 + 刷新（M36/P1-B2）：写接口成功后不再直接 HX-Refresh（提示会被新页面冲掉），
+// 改由服务端下发 HX-Trigger: {"hpsl:refresh": {"msg": "…"}}；先弹提示，再把页面刷新到最新。
+(function () {
+  document.addEventListener('hpsl:refresh', function (evt) {
+    var detail = (evt && evt.detail) || {};
+    var msg = detail.msg || detail.value || '操作成功，正在刷新…';
+    if (window.hpslToast) window.hpslToast(msg);
+    setTimeout(function () { window.location.reload(); }, 550);
+  });
+})();
+
+
 // 弹层可关闭（无障碍）：Esc 关闭页面上所有 .modal；配合弹层内的「关闭」按钮。
 (function () {
   document.addEventListener('keydown', function (evt) {

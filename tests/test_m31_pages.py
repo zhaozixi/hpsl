@@ -29,7 +29,8 @@ def test_knowledge_index_and_search(client, csrf_headers, tmp_path):
         "/api/v1/sources", headers=_htmx(csrf_headers), data={"path": str(kb)}
     )
     assert r.status_code == 200
-    assert r.headers.get("HX-Refresh") == "true"
+    assert r.headers.get("HX-Refresh") is None
+    assert "hpsl:refresh" in r.headers.get("HX-Trigger", "")
 
     page = client.get("/knowledge")
     assert str(kb) in page.text
@@ -54,7 +55,8 @@ def test_knowledge_delete_source(client, csrf_headers, tmp_path):
     r = client.request(
         "DELETE", f"/api/v1/sources/{sources[0]['id']}", headers=_htmx(csrf_headers)
     )
-    assert r.headers.get("HX-Refresh") == "true"
+    assert r.headers.get("HX-Refresh") is None
+    assert "hpsl:refresh" in r.headers.get("HX-Trigger", "")
     assert client.get("/api/v1/sources").json()["data"] == []
 
 

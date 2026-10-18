@@ -173,7 +173,7 @@ def test_duplicate_edge_rejected(client, csrf_headers):
 
 
 # ---------------------------------------------------------------------------
-# AC4：页面表单（HTMX form-urlencoded，成功 HX-Refresh）
+# AC4：页面表单（HTMX form-urlencoded，成功 HX-Trigger: hpsl:refresh）
 # ---------------------------------------------------------------------------
 def test_cards_page_has_create_forms(client, csrf_headers):
     d = _create_and_switch(client, csrf_headers)
@@ -189,18 +189,20 @@ def test_cards_page_has_create_forms(client, csrf_headers):
     assert f'value="{c["id"]}"' in r.text
     assert "页面概念" in r.text
 
-    # HTMX form 提交（form-urlencoded）成功 → HX-Refresh: true
+    # HTMX form 提交（form-urlencoded）成功 → 提示 + HX-Trigger(hpsl:refresh)
     htmx = {**csrf_headers, "HX-Request": "true"}
     created = client.post("/api/v1/concepts", headers=htmx, data={"name": "HTMX概念"})
     assert created.status_code == 200, created.text
-    assert created.headers.get("HX-Refresh") == "true"
+    assert created.headers.get("HX-Refresh") is None
+    assert "hpsl:refresh" in created.headers.get("HX-Trigger", "")
     card = client.post(
         "/api/v1/cards",
         headers=htmx,
         data={"concept_id": c["id"], "my_words": "HTMX 建卡"},
     )
     assert card.status_code == 200, card.text
-    assert card.headers.get("HX-Refresh") == "true"
+    assert card.headers.get("HX-Refresh") is None
+    assert "hpsl:refresh" in card.headers.get("HX-Trigger", "")
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,13 @@
         <input class="input" type="text" name="close_reason" maxlength="500"
                {% if unit.status != 'JUDGE' %}disabled{% endif %}></label>
     </p>
+    <p>
+      <label>
+        <input type="checkbox" name="force_close" value="1"
+               {% if unit.status != 'JUDGE' %}disabled{% endif %}>
+        未达标，强行闭环（必须填写理由）
+      </label>
+    </p>
     <p><button class="btn btn-primary" type="submit" {% if unit.status != 'JUDGE' %}disabled{% endif %}>判定并闭环</button></p>
   </form>
   {% if unit.status in ('INTEGRATE', 'CLOSED') %}

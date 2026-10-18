@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import html
 from pathlib import Path
 from typing import Optional
 
@@ -103,7 +104,14 @@ async def start_review_api(req: Request, review_id: str):
     pid = _require_pid()
     data = await _parse_body(req)
     question = data.get("question") if isinstance(data.get("question"), str) else None
-    vo = rq.start_review(pid, review_id, question=question)
+    try:
+        vo = rq.start_review(pid, review_id, question=question)
+    except BizError as exc:
+        # M36/P1-B4：失败也要返回带 #panel-{review_id} 锚点的片段。
+        # 否则 HTMX 用裸错误片段 outerHTML 掉整个面板，后续重试/提交都失去落点。
+        if not _is_htmx(req):
+            raise
+        return _start_error_fragment(review_id, exc.msg, exc.code)
     if _is_htmx(req):
         return _start_fragment(vo.review_id, vo.question)
     # ReviewStartVO 无 to_dict（引擎未提供），此处手动构造
@@ -151,16 +159,30 @@ async def submit_review_api(req: Request, review_id: str):
 # ---------------------------------------------------------------------------
 # HTMX 片段（面板替换，保持 #panel-{review_id} 锚点）
 # ---------------------------------------------------------------------------
+def _start_error_fragment(review_id: str, msg: str, code: str) -> HTMLResponse:
+    """开始复测失败：保留 #panel-{review_id} 锚点，错误就地展示并提供重试。"""
+    rid = html.escape(review_id, quote=True)
+    return HTMLResponse(
+        f'<div id="panel-{rid}" aria-live="polite">'
+        f'<p class="result err">{html.escape(msg)}（{html.escape(code)}）</p>'
+        f'<button type="button" class="btn btn-sm" '
+        f'hx-post="/api/v1/reviews/{rid}/start" '
+        f'hx-target="#panel-{rid}" hx-swap="outerHTML">重试</button>'
+        f"</div>"
+    )
+
+
 def _start_fragment(review_id: str, question: Optional[str]) -> HTMLResponse:
     """开始复测后返回评分表单片段（包裹于 #panel-{review_id}，供 outerHTML 替换）。"""
+    # C10：question 可能来自 LLM / 用户输入，拼进 HTML 前必须转义。
     q = (
         f'<p class="prompt prompt-info"><span class="badge">复测卷</span>'
-        f'<span class="msg">{question}</span></p>'
+        f'<span class="msg">{html.escape(question)}</span></p>'
         if question
         else ""
     )
-    html = f"""
-<div id="panel-{review_id}">
+    frag = f"""
+<div id="panel-{review_id}" aria-live="polite">
   {q}
   <form hx-post="/api/v1/reviews/{review_id}/submit"
         hx-target="#panel-{review_id}" hx-swap="outerHTML">
@@ -172,18 +194,18 @@ def _start_fragment(review_id: str, question: Optional[str]) -> HTMLResponse:
   </form>
 </div>
 """
-    return HTMLResponse(html)
+    return HTMLResponse(frag)
 
 
 def _result_fragment(review_id: str, score: float, passed: bool, next_due: str) -> HTMLResponse:
     """提交复测后返回结果片段（包裹于 #panel-{review_id}）。"""
     verdict = "通过" if passed else "未通过"
     cls = "ok" if passed else "notice"
-    html = f"""
-<div id="panel-{review_id}">
+    frag = f"""
+<div id="panel-{review_id}" aria-live="polite">
   <p class="{cls}">{verdict}（得分 {score:.2f}）</p>
   <p><small>下次复测：{next_due}</small></p>
   <p><small>该复测已推进至下一间隔档，活跃复测数可在账本总览查看。</small></p>
 </div>
 """
-    return HTMLResponse(html)
+    return HTMLResponse(frag)

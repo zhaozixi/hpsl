@@ -17,7 +17,7 @@
 <section>
   <h2>到期复测（{{ items|length }}）</h2>
   {% if items %}
-    <div id="review-list">
+    <div id="review-list" aria-live="polite">
     {% for it in items %}
       <div class="card" id="review-{{ it.review_id }}">
         <h3>{{ it.concept_name or it.concept_id }}</h3>
@@ -26,7 +26,7 @@
           <li>间隔档：{{ it.interval_days }} 天</li>
           <li>到期：{{ it.due }}</li>
         </ul>
-        <div id="panel-{{ it.review_id }}">
+        <div id="panel-{{ it.review_id }}" aria-live="polite">
           <button type="button"
                   hx-post="/api/v1/reviews/{{ it.review_id }}/start"
                   hx-target="#panel-{{ it.review_id }}"

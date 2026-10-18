@@ -1,6 +1,19 @@
 {% from "macros.html" import cost_badge %}
 <div id="quota-modal-{{ session_id }}">
-  {% if confirmed %}
+  {% if error %}
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="quota-title-{{ session_id }}">
+    <div class="modal-card">
+      <button type="button" class="modal-close" onclick="this.closest('.modal').remove()">关闭</button>
+      <h3 id="quota-title-{{ session_id }}">预算超限待确认</h3>
+      <p class="result err">{{ error }}（{{ error_code }}）</p>
+      <p><small>会话 {{ session_id }} · 确认未生效，可再次尝试；如持续失败请刷新页面。</small></p>
+      <form hx-post="/api/v1/budget/confirm" hx-target="#quota-modal-{{ session_id }}" hx-swap="outerHTML">
+        <input type="hidden" name="session_id" value="{{ session_id }}">
+        <button type="submit" class="btn btn-primary">重试确认</button>
+      </form>
+    </div>
+  </div>
+  {% elif confirmed %}
   <div class="card">
     <p class="ok">已确认继续，本会话预算状态：{{ cost_badge(cost.status) }}（累计 ${{ cost.cumulative_usd }} / 上限 ${{ cost.budget_cap_usd }}）</p>
     <p><a href="/budget">返回预算页</a></p>

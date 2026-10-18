@@ -28,6 +28,7 @@ from ..common.enums import Role
 from ..common.errors import BizError
 from ..common.result import ok
 from ..engine.role_llm import call_role
+from ..engine import cost as cost_engine
 from ..models import registry
 from ..roles import assembler
 from ..roles.contracts import CONTRACTS
@@ -203,6 +204,9 @@ async def role_call_api(req: Request, role: str):
             {"id": session_id, "unit_id": unit_id, "started_at": db._now_utc()},
             "user",
         )
+
+    # M36/A1：预算闸门（blocked → A080001）；此前只在预算页展示、从未拦截调用
+    cost_engine.ensure_budget(session_id)
 
     # 五维限流的第 3 维：LLM 频次（默认 10 次/分钟/会话）
     if not rate_limiter.allow("llm_freq", session_id):

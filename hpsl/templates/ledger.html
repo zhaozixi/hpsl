@@ -107,14 +107,17 @@
         <span class="msg">{{ s.message }}</span>
         <button type="button"
                 hx-post="/api/v1/soft-prompts/{{ s.id }}/dismiss"
-                hx-swap="none"
-                hx-on::after-request="if (event.detail.successful) this.closest('.prompt').remove()" class="btn btn-sm">关闭</button>
+                hx-target="#prompt-result" hx-swap="innerHTML"
+                class="btn btn-sm">关闭</button>
       </div>
       {% endfor %}
     {% else %}
       <p class="ok">暂无需要关注的提示，继续保持。</p>
     {% endif %}
   </div>
+  <!-- 关闭结果单独落在这里：成功时后端返回提示 + 用 OOB 把对应行置空；
+       业务失败（BizError 固定 200）只在这里显示错误，绝不再误删行。 -->
+  <div id="prompt-result" role="status" aria-live="polite"></div>
 </section>
 
 <!-- 最近操作与撤销（M27；POST /api/v1/audit/{id}/undo） -->

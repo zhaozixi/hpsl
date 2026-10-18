@@ -75,7 +75,8 @@ def test_weekly_batch_form_submission(client, csrf_headers):
         headers=h,
         data={"status-g1": "废弃", "prereq-g1": "不需要", "defer-g1": "7"},
     )
-    assert r.headers.get("HX-Refresh") == "true"
+    assert r.headers.get("HX-Refresh") is None
+    assert "hpsl:refresh" in r.headers.get("HX-Trigger", "")
     assert "已更新 1 条" in r.text
     assert db.query(pid, "SELECT status FROM gap WHERE id='g1'")[0]["status"] == "废弃"
     assert _ctx(pid)["prereq"] == "不需要"

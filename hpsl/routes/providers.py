@@ -5,7 +5,7 @@
   受 `llm_freq` 限流；结束后用累计文本 + usage 记账。
 - 与"角色调用"的区别：本接口不做角色契约裁剪，供高级/调试用途（输入预览仍是角色层的）。
 
-纪律：零 DDL；写经 db.write / record_call；复用 A040001/A040003/C400001/C429001/A010001。
+纪律：零 DDL；写经 db.write / record_call；复用 A040001/A040003/A020001/C400001/C429001/A010001。
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from fastapi.responses import StreamingResponse
 from .. import db, projects as proj
 from ..common.errors import BizError
 from ..common.result import ok
-from ..engine.cost import record_call
+from ..engine.cost import ensure_budget, record_call
 from ..models import registry
 from ..models.base import Msg, Reply
 from .security import hold_sse_slot, rate_limiter, write_security
@@ -101,6 +101,32 @@ def _ensure_session(pid: str, session_id: Optional[str], unit_id: Optional[str])
     return sid
 
 
+def _validate_unit(pid: str, unit_id: Optional[str]) -> None:
+    """校验请求携带的 unit_id 真实存在（不存在 → A020001，复用已注册错误码）。
+
+    必须在 `_ensure_session` 写入 session 之前调用：`session.unit_id` 有外键约束，
+    若先写 session 再校验，伪造 unit_id 会触发 sqlite3.IntegrityError 裸 500。
+    """
+    if not unit_id:
+        return
+    if not db.query(pid, "SELECT id FROM unit WHERE id=?", (unit_id,)):
+        raise BizError("A020001", msg=f"unit_id 不存在：{unit_id}")
+
+
+def _build_adapter(model_id: str):
+    """构造适配器；未知 model 的 KeyError（registry.get_model）→ A040003。
+
+    `registry.build_adapter` 对未注册模型直接抛 KeyError，路由层捕获后转成已注册的业务
+    错误码，避免裸 500（错误码注册表无新增项）。
+    """
+    try:
+        return registry.build_adapter(model_id)
+    except KeyError as exc:
+        raise BizError(
+            "A040003", msg=f"未知模型：{model_id}（检查 models.yaml 是否已注册）"
+        ) from exc
+
+
 def _append_turns(pid: str, session_id: str, user_text: str, reply: Reply, provider: str) -> None:
     db.append_turn(pid, session_id, "user", user_text, actor="user")
     db.append_turn(
@@ -145,11 +171,13 @@ async def chat_api(req: Request, name: str):
     msgs = _messages(body)
     model_id = body.get("model") or _default_model(name)
     unit_id = body.get("unit_id") or None
+    _validate_unit(pid, unit_id)  # 先校验外键目标，再写 session（避免 IntegrityError 裸 500）
     session_id = _ensure_session(pid, body.get("session_id") or None, unit_id)
+    ensure_budget(session_id)
     if not rate_limiter.allow("llm_freq", session_id):
         raise BizError("C429001", msg="模型调用过于频繁（每会话 10 次/分钟），请稍后再试")
 
-    adapter = registry.build_adapter(model_id)
+    adapter = _build_adapter(model_id)
     reply = adapter.complete(msgs, json_schema=body.get("json_schema"))
     cost_vo = record_call("chat", reply, session_id, unit_id)
     _append_turns(pid, session_id, _turn_text(msgs[-1].content), reply, name)
@@ -179,11 +207,13 @@ async def chat_stream_api(req: Request, name: str):
     msgs = _messages(body)
     model_id = body.get("model") or _default_model(name)
     unit_id = body.get("unit_id") or None
+    _validate_unit(pid, unit_id)  # 先校验外键目标，再写 session（避免 IntegrityError 裸 500）
     session_id = _ensure_session(pid, body.get("session_id") or None, unit_id)
+    ensure_budget(session_id)
     if not rate_limiter.allow("llm_freq", session_id):
         raise BizError("C429001", msg="模型调用过于频繁（每会话 10 次/分钟），请稍后再试")
 
-    adapter = registry.build_adapter(model_id)
+    adapter = _build_adapter(model_id)
     user_text = _turn_text(msgs[-1].content)
 
     def stream_fallback():

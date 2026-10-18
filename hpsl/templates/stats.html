@@ -73,7 +73,7 @@
 </div>
 <div class="card">
   {% if stats.cost_max > 0 %}
-  <svg width="100%" viewBox="0 0 600 160" preserveAspectRatio="none" style="border:1px solid var(--border); background:var(--surface-2); border-radius:var(--r-md);">
+  <svg width="100%" viewBox="0 0 600 160" preserveAspectRatio="none" role="img" aria-label="近 {{ days }} 天每日 LLM 花费柱状图，峰值 {{ '%.4f'|format(stats.cost_max) }}" style="border:1px solid var(--border); background:var(--surface-2); border-radius:var(--r-md);">
     <line x1="0" y1="140" x2="600" y2="140" stroke="var(--border-strong)" stroke-width="1"></line>
     {% set bw = 600 / stats.cost_series|length %}
     {% for s in stats.cost_series %}
@@ -92,7 +92,7 @@
 <h2>概念验证时间线（近 {{ days }} 天）</h2>
 <div class="card">
   {% if stats.verify_max > 0 %}
-  <svg width="100%" viewBox="0 0 600 160" preserveAspectRatio="none" style="border:1px solid var(--border); background:var(--surface-2); border-radius:var(--r-md);">
+  <svg width="100%" viewBox="0 0 600 160" preserveAspectRatio="none" role="img" aria-label="近 {{ days }} 天每日完成复测验证的概念数时间线，窗口内累计 {{ stats.verify_total }} 个，单日峰值 {{ stats.verify_max }} 个" style="border:1px solid var(--border); background:var(--surface-2); border-radius:var(--r-md);">
     <line x1="0" y1="140" x2="600" y2="140" stroke="var(--border-strong)" stroke-width="1"></line>
     {% set vmax = stats.verify_max %}
     {% set vw = 600 / stats.verify_timeline|length %}

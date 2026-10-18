@@ -83,6 +83,17 @@ def _is_htmx(req: Request) -> bool:
     return req.headers.get("hx-request") is not None
 
 
+def _as_bool(value) -> bool:
+    """表单/JSON 布尔归一：'false'/'0'/'no'/'off' 为 False（避免 bool('false')==True）。"""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
 def _local_ts(value):
     """UTC ISO 串 → 本地时间 `YYYY-MM-DD HH:MM`；无法解析时原样返回。"""
     if not value or not isinstance(value, str):
@@ -290,11 +301,36 @@ async def arbitrate_cc_api(req: Request, uid: str, cid: str):
     ruling = data.get("ruling")
     if not isinstance(ruling, str) or not ruling:
         raise BizError("C400001", msg="缺少 ruling（仲裁结论）")
-    cc.arbitrate(pid, claim_id=cid, ruling=ruling)
+    try:
+        cc.arbitrate(pid, claim_id=cid, ruling=ruling)
+    except BizError as exc:
+        # M36/P1-B4：失败仍返回 _unit_cc_row.html 渲染的整行（保留 #cc-{cid} 锚点），
+        # 否则 outerHTML 会把行整个顶掉成裸错误片段，用户无法重试。
+        if not _is_htmx(req):
+            raise
+        rows = db.query(pid, "SELECT * FROM claim_check WHERE id=?", (cid,))
+        row = dict(rows[0]) if rows else {
+            "id": cid,
+            "claim": "",
+            "user_ruling": None,
+            "residual": 0,
+        }
+        return _TEMPLATES.TemplateResponse(
+            request=req,
+            name="_unit_cc_row.html",
+            context={
+                "unit": {"id": uid},
+                "cc": row,
+                "error": exc.msg,
+                "error_code": exc.code,
+            },
+        )
     if _is_htmx(req):
         rows = db.query(pid, "SELECT * FROM claim_check WHERE id=?", (cid,))
         if not rows:
-            return HTMLResponse(f'<div id="cc-{cid}"><p class="notice">挑错 {cid} 不存在</p></div>')
+            # C10：cid 来自路径参数，拼进 HTML 前先转义（锚点 id 与提示文案同源）。
+            cid_esc = _html.escape(cid, quote=True)
+            return HTMLResponse(f'<div id="cc-{cid_esc}"><p class="notice">挑错 {cid_esc} 不存在</p></div>')
         return _TEMPLATES.TemplateResponse(
             request=req,
             name="_unit_cc_row.html",
@@ -472,11 +508,11 @@ async def close_unit_api(req: Request, uid: str):
             pid,
             uid,
             score,
-            force_close=bool(data.get("force_close")),
+            force_close=_as_bool(data.get("force_close")),
             close_reason=reason,
-            is_keypoint=bool(data.get("is_keypoint")),
+            is_keypoint=_as_bool(data.get("is_keypoint")),
             same_source=same_source,
-            explicit_confirm=bool(data.get("explicit_confirm")),
+            explicit_confirm=_as_bool(data.get("explicit_confirm")),
         )
     except BizError as exc:
         if not _is_htmx(req):

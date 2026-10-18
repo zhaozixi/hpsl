@@ -27,7 +27,7 @@ except ImportError:  # M0 阶段允许在无 fastapi 环境下导入本模块（
     FastAPI = None  # type: ignore
 
 from . import config as _config
-from .common.result import fail
+from .common.result import fail, from_error
 from .common.errors import BizError
 from .routes import security, projects_routes
 from .routes import roles as roles_routes
@@ -53,7 +53,7 @@ if FastAPI is not None:
     # 生产形态关闭交互文档与 OpenAPI（安全设计 §4.2.2 / T-15）；无对外 API 消费方
     app = FastAPI(
         title="hpsl",
-        version="0.0.0",
+        version="0.1.0",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -136,16 +136,30 @@ if FastAPI is not None:
                     f"<pre>{_html.escape(str(detail))}</pre></details>"
                 )
             return HTMLResponse(content=body, status_code=200)
-        return JSONResponse(status_code=exc.http_status, content=fail(exc.code, trace_id=tid).to_dict())
+        return JSONResponse(status_code=exc.http_status, content=from_error(exc, trace_id=tid).to_dict())
+
+    @app.exception_handler(Exception)
+    async def _unhandled_handler(request: Request, exc: Exception):
+        """未捕获异常统一收口：日志留栈、对外只给 B999001，避免裸 500/栈泄漏。"""
+        import logging
+
+        logging.getLogger("hpsl").exception("未处理异常：%s %s", request.method, request.url.path)
+        tid = getattr(request.state, "trace_id", None)
+        if request.headers.get("hx-request") is not None:
+            return HTMLResponse(
+                content='<p class="result err">系统内部错误，请稍后再试（B999001）</p>',
+                status_code=200,
+            )
+        return JSONResponse(status_code=500, content=fail("B999001", trace_id=tid).to_dict())
 
     @app.get("/healthz")
     def healthz():
         # Liveness：进程存活（§3.2.M10.2）
-        return {"status": "ok", "service": "hpsl", "phase": "M10"}
+        return {"status": "ok", "service": "hpsl", "phase": "M36"}
 
     @app.get("/readyz")
     def readyz():
-        # Readiness：项目库目录可读写（§3.2.M10.2）
+        # Readiness：项目库目录可读写（§3.2.M10.2）；不写探针文件，避免每次探测留垃圾
         try:
             root = _config.projects_root()
             ready = root.exists() and _writable(root)
@@ -153,21 +167,17 @@ if FastAPI is not None:
             ready = False
         if not ready:
             return JSONResponse(status_code=503, content={"status": "not_ready", "service": "hpsl"})
-        return {"status": "ok", "service": "hpsl", "phase": "M10"}
+        return {"status": "ok", "service": "hpsl", "phase": "M36"}
 
 else:  # pragma: no cover - 占位降级
     app = None
 
 
 def _writable(path: Path) -> bool:
-    import tempfile
-    try:
-        tmp = path / ".hpsl-readyz-probe"
-        tmp.write_text("1")
-        tmp.unlink()
-        return True
-    except OSError:
-        return False
+    """目录可写性检查（不落探针文件）。"""
+    import os
+
+    return os.access(path, os.W_OK)
 
 
 def _ensure_passphrase_interactive(
@@ -257,10 +267,30 @@ def _restore_active_project() -> None:
         print(f"[serve] 已恢复到上次项目：{vo.name}（{vo.id}）")
 
 
+def _prepare_serve(host: str, port: int | None) -> tuple[str, int]:
+    """启动前归一：拒绝非回环监听，并把实际端口写回 HPSL_PORT。
+
+    M36/A4：此前 `serve --port 9000` 只改 uvicorn、不改 `HPSL_PORT`，
+    Host/Origin 白名单仍按 8765 计算，请求全部 403。这里显式对齐。
+    """
+    loopback = {"127.0.0.1", "localhost", "::1"}
+    if host not in loopback:
+        allow = os.environ.get("HPSL_ALLOW_NON_LOOPBACK", "").strip().lower()
+        if allow not in ("1", "true", "yes", "on"):
+            raise SystemExit(
+                "[serve] HPSL 仅支持回环地址（127.0.0.1 / localhost / ::1）；"
+                "确需外网监听请显式设置 HPSL_ALLOW_NON_LOOPBACK=1 并自行承担风险"
+            )
+    real_port = int(port) if port is not None else _config.service_port()
+    os.environ["HPSL_PORT"] = str(real_port)
+    return host, real_port
+
+
 def serve(host: str = "127.0.0.1", port: int | None = None, restore: bool = True) -> None:
     """启动 uvicorn 单 worker（监听回环地址）；优雅停机（SIGTERM/SIGINT 由 uvicorn 处理）。"""
     if app is None:
         raise RuntimeError("FastAPI 未安装，无法启动 serve；请先 pip install fastapi uvicorn")
+    host, port = _prepare_serve(host, port)
     # P2-08：启动口令（交互式）。必须早于任何 db 操作，避免锁定态下做出误导性读写。
     _ensure_passphrase_interactive()
 
