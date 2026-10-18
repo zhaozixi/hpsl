@@ -43,14 +43,14 @@
 </style>
 
 <div class="graph-controls">
-  <button type="button" class="btn btn-sm" onclick="zoomBy(1.2)" aria-label="放大">＋</button>
-  <button type="button" class="btn btn-sm" onclick="zoomBy(1/1.2)" aria-label="缩小">－</button>
-  <button type="button" class="btn btn-sm" onclick="resetView()">重置</button>
-  <button type="button" class="btn btn-sm" onclick="fitView()">适配</button>
-  <button type="button" class="btn btn-sm" onclick="autoLayout()">自动布局</button>
-  <button type="button" class="btn btn-sm" onclick="hierarchicalLayout()">分层布局</button>
+  <button type="button" class="btn btn-sm" data-action="graph-zoom" data-factor="1.2" aria-label="放大">＋</button>
+  <button type="button" class="btn btn-sm" data-action="graph-zoom" data-factor="0.8333" aria-label="缩小">－</button>
+  <button type="button" class="btn btn-sm" data-action="graph-reset">重置</button>
+  <button type="button" class="btn btn-sm" data-action="graph-fit">适配</button>
+  <button type="button" class="btn btn-sm" data-action="graph-auto">自动布局</button>
+  <button type="button" class="btn btn-sm" data-action="graph-hier">分层布局</button>
   <span class="sep"></span>
-  <input id="graph-search" class="input" type="search" placeholder="搜索概念名…" oninput="onSearchInput()" onkeydown="onSearchKey(event)">
+  <input id="graph-search" class="input" type="search" placeholder="搜索概念名…" data-action="graph-search">
   <span id="graph-search-status"></span>
 </div>
 
@@ -96,7 +96,7 @@
   {% endif %}
 </section>
 
-<script>
+<script nonce="{{ request.state.csp_nonce if request is defined else '' }}">
 const NODES = {{ nodes | tojson }};
 const EDGES = {{ edge_views | tojson }};
 const CONCEPTS = {{ concepts | tojson }};

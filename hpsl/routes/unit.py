@@ -7,6 +7,7 @@
 - GET /api/v1/units/{uid}：单元详情 REST（含 allowed_next / gaps / claim_checks）。
 - POST /api/v1/units/{uid}/move：驱动状态机（write_security）。
 - POST /api/v1/units/{uid}/claim-check/{cid}/arbitrate：挑错仲裁（write_security）。
+- POST /api/v1/units/{uid}/three-questions：记录论文口径的固定三问（write_security）。
 
 纪律约束（严守锁定基线）：
 - 零 DDL：仅经 engine -> db.write 写 unit/claim_check 既有表（M0 锁定 16 库对象）。
@@ -18,6 +19,7 @@
 from __future__ import annotations
 
 import html as _html
+import json
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -34,6 +36,7 @@ from ..engine import ledger as lg
 from ..common.enums import AttemptKind, UnitState
 from ..common.errors import BizError
 from ..common.result import ok
+from ._htmx import refresh_with_toast
 from .security import write_security, read_security
 
 api_router = APIRouter(prefix="/api/v1")
@@ -81,6 +84,61 @@ async def _parse_body(req: Request) -> dict:
 
 def _is_htmx(req: Request) -> bool:
     return req.headers.get("hx-request") is not None
+
+
+# 固定三问（论文 4.2.1 口径）：字段名 → 人读文案。判据固定，跨单元才可比。
+_THREE_QUESTION_FIELDS = (
+    ("what_problem", "它解决什么问题"),
+    ("how_it_works", "它怎么工作"),
+    ("when_not_applicable", "什么条件不适用"),
+)
+_THREE_QUESTION_MAX = 1000
+
+
+def _three_questions_payload(data: dict) -> dict:
+    """校验固定三问：三项均为 1~1000 字符（缺失 / 空 / 超长 → C400001）。"""
+    out: dict[str, str] = {}
+    for key, label in _THREE_QUESTION_FIELDS:
+        value = data.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise BizError("C400001", msg=f"{label}（{key}）必填，1~1000 字符")
+        value = value.strip()
+        if len(value) > _THREE_QUESTION_MAX:
+            raise BizError(
+                "C400001", msg=f"{label}（{key}）过长（≤{_THREE_QUESTION_MAX} 字符）"
+            )
+        out[key] = value
+    return out
+
+
+def _latest_three_questions(pid: str, uid: str) -> Optional[dict]:
+    """取该单元最近一条 kind='三问'，解析 rubric['three_questions']（只读）。
+
+    `db.query` 不自动解码 JSON 列，这里按需解析；历史 data 若损坏则视为无记录，
+    页面降级为空态而不是 500。
+    """
+    rows = db.query(
+        pid,
+        "SELECT rubric, ts FROM attempt WHERE unit_id=? AND kind='三问' "
+        "ORDER BY ts DESC, rowid DESC LIMIT 1",
+        (uid,),
+    )
+    if not rows:
+        return None
+    raw = rows[0].get("rubric")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, dict):
+        return None
+    tq = raw.get("three_questions")
+    if not isinstance(tq, dict):
+        return None
+    out = {key: tq.get(key, "") for key, _label in _THREE_QUESTION_FIELDS}
+    out["recorded_at"] = _local_ts(rows[0].get("ts"))
+    return out
 
 
 def _as_bool(value) -> bool:
@@ -205,6 +263,7 @@ def unit_detail_page(req: Request, uid: str):
             "gaps": gaps,
             "claim_checks": claim_checks,
             "turns": turns,
+            "three_questions": _latest_three_questions(pid, uid),
         },
     )
 
@@ -487,6 +546,37 @@ async def create_attempt_api(req: Request, uid: str):
     if _is_htmx(req):
         return HTMLResponse(f"<p class='ok'>已记录一次「{kind}」。</p>")
     return ok({"attempt_id": attempt_id, "kind": kind})
+
+
+@api_router.post("/units/{uid}/three-questions", dependencies=[Depends(write_security)])
+async def record_three_questions_api(req: Request, uid: str):
+    """记录论文口径的固定三问（结构化落 attempt.rubric）。
+
+    请求体：`{what_problem, how_it_works, when_not_applicable}`（各 1~1000 字符）。
+    落库：attempt(kind='三问', unit_id=uid, rubric={"three_questions": {...}})。
+    HTMX 成功 → 提示片段 + `hpsl:refresh` 事件（保留提示后再刷新）；否则 → `{attempt_id}`。
+    """
+    pid = _require_pid()
+    _get_unit(pid, uid)
+    data = await _parse_body(req)
+    three_questions = _three_questions_payload(data)
+
+    attempt_id = uuid.uuid4().hex
+    db.write(
+        pid,
+        "attempt",
+        {
+            "id": attempt_id,
+            "unit_id": uid,
+            "kind": "三问",
+            "rubric": {"three_questions": three_questions},
+            "ts": db._now_utc(),
+        },
+        "user",
+    )
+    if _is_htmx(req):
+        return refresh_with_toast("已记录固定三问")
+    return ok({"attempt_id": attempt_id})
 
 
 @api_router.post("/units/{uid}/close", dependencies=[Depends(write_security)])

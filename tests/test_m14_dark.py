@@ -17,9 +17,17 @@ def test_theme_toggle_present(client):
     r = client.get("/")
     assert r.status_code == 200
     assert 'id="theme-toggle-btn"' in r.text
-    assert "hpslToggleTheme" in r.text
-    # 防闪烁：head 内联脚本在渲染前读取 localStorage 偏好
-    assert "hpsl-theme" in r.text
+    # C9：切换函数外置到 /static/theme.js（严格 CSP 不再允许内联脚本）
+    assert 'data-action="toggle-theme"' in r.text
+    assert '/static/theme.js' in r.text
+    assert "hpslToggleTheme" not in r.text
+    # 防闪烁：head 内同步外链脚本在渲染前读取 localStorage 偏好
+    assert r.text.index('/static/theme.js') < r.text.index('<body>')
+    js = client.get("/static/theme.js")
+    assert js.status_code == 200
+    assert "hpslToggleTheme" in js.text
+    assert "hpslSyncThemeLabel" in js.text
+    assert "hpsl-theme" in js.text
 
 
 def test_dark_tokens_defined(client):

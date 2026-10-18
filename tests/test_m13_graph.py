@@ -34,10 +34,11 @@ def test_graph_has_zoom_controls_and_search(client, csrf_headers):
     r = client.get("/graph")
     assert r.status_code == 200
     for token in [
-        'onclick="zoomBy(1.2)"',
-        'onclick="zoomBy(1/1.2)"',
-        'onclick="resetView()"',
-        'onclick="fitView()"',
+        'data-action="graph-zoom"',
+        'data-factor="1.2"',
+        'data-factor="0.8333"',
+        'data-action="graph-reset"',
+        'data-action="graph-fit"',
         'id="graph-search"',
         "重置",
         "适配",

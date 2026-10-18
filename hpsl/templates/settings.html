@@ -14,7 +14,7 @@
 {{ help_banner("调整评判标准（一般不用改）",
    "这里像是「考试多少分算及格」的设定。系统已给好默认值，大多数情况你不用动。每个项目带「?」的词，悬停看通俗解释。留空 = 不改这项。") }}
 
-<form id="settings-form" onsubmit="return saveSettings(event)">
+<form id="settings-form" data-action="save-settings">
   <section>
     <h2>判分与阈值</h2>
     <p>
@@ -70,7 +70,7 @@
   <p><small>留空的字段不会被修改（保持原值或默认值），避免误写为 0 / 空值污染配置。</small></p>
 </form>
 
-<script>
+<script nonce="{{ request.state.csp_nonce if request is defined else '' }}">
 function saveSettings(e) {
   e.preventDefault();
   // 数值字段：留空 = 不改动该字段（避免误写 0 / None）

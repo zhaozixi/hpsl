@@ -1,11 +1,13 @@
 """P2-03 / P2-04：多模型交叉验证 + 多挑错 + 评分要点核对（Web 接线）。
 
-三个端点（全部 write_security）：
+四个端点（全部 write_security）：
 - `POST /api/v1/units/{uid}/critic/multi`：多模型挑错。对每个挑错者模型各写一条
   `claim_check`（同源行走 BD-03 同源降级警告），并返回两两同源矩阵 `pairs`。
 - `POST /api/v1/units/{uid}/answers/cross-check`：多答案机交叉验证。每个模型经
   `call_role(Role.ANSWER_MACHINE, ...)` 调用一次（各自记 `llm_call` + 写 `turn`），
   返回各模型答案与本次调用成本。真实调用由 fake adapter 在测试中替代。
+- `POST /api/v1/units/{uid}/answers/cross-check/auto`（C12）：自动三模型交叉验证。
+  按 provider 去重取每家首个模型（最多 3 个），复用同一核心逻辑，响应多 `models`。
 - `POST /api/v1/attempts/{aid}/rubric/verify`：评分要点核对。读 attempt 的 rubric，
   交指定模型核对，核对意见写入 `claim_check`（claim="评分要点核对"）。
 
@@ -97,6 +99,24 @@ def _ensure_registered(model_ids: list[str]) -> None:
             raise BizError("A040003", msg=f"模型不可用：{m!r}（未在 models.yaml 注册或缺少密钥）")
 
 
+def _auto_model_ids(limit: int = 3) -> list[str]:
+    """自动三模型：按 provider 去重，取每家首个已注册模型（最多 `limit` 家）。
+
+    顺序以 models.yaml 为准（当前 deepseek / qwen / zhipu）。只做注册表编排，
+    不预检密钥：适配器缺密钥时仍按其既有错误码（A040003）失败。
+    """
+    seen: set[str] = set()
+    model_ids: list[str] = []
+    for cfg in registry.list_models():
+        if cfg.provider in seen:
+            continue
+        seen.add(cfg.provider)
+        model_ids.append(cfg.id)
+        if len(model_ids) >= limit:
+            break
+    return model_ids
+
+
 def _rubric_of(att: dict):
     """attempt.rubric 为 JSON 文本列（db.query 不自动解析），按需解码。"""
     raw = att.get("rubric")
@@ -163,27 +183,31 @@ async def critic_multi_api(req: Request, uid: str):
 
 
 # ---------------------------------------------------------------------------
-# P2-03：多答案机交叉验证
+# P2-03 / C12：多答案机交叉验证
 # ---------------------------------------------------------------------------
-@api_router.post("/units/{uid}/answers/cross-check", dependencies=[Depends(write_security)])
-async def cross_check_api(req: Request, uid: str):
-    """多答案机交叉验证：每模型一次调用、各自记账（llm_call）+ 各自写 turn。
+def _cross_check_impl(
+    pid: str,
+    uid: str,
+    question: str,
+    model_ids: list[str],
+    session_id: Optional[str],
+    *,
+    topic: Optional[str] = None,
+) -> dict:
+    """交叉验证核心：每模型一次调用、各自记账（llm_call）+ 各自写 turn。
 
-    请求体：`{question, model_ids?, session_id?}`
-    响应：`{answers: [{model, text, tokens_in, tokens_out, cost_usd}], session_id}`
+    由显式 model_ids 端点与自动三模型端点共用；返回 `{answers, session_id}`。
+    校验顺序保持 fail-closed：单元/问题/模型/session 全部通过后才创建会话与调用。
     """
-    pid = _require_pid()
     unit = _unit(pid, uid)
-    body = await _parse_body(req)
-    question = body.get("question")
     if not isinstance(question, str) or not question.strip():
         raise BizError("C400001", msg="question 必填")
+    if not isinstance(model_ids, list) or not model_ids:
+        raise BizError("C400001", msg="model_ids 须为非空字符串数组")
 
     # 先解析模型清单（未知模型在创建 session / 记费之前失败，避免孤立会话与半截记账）
-    model_ids = _model_ids(body.get("model_ids"), "answer_machine")
     _ensure_registered(model_ids)
 
-    session_id = body.get("session_id") or None
     if session_id and not db.query(pid, "SELECT id FROM session WHERE id=?", (session_id,)):
         raise BizError("C400001", msg="session_id 不存在")
     if not session_id:
@@ -196,7 +220,6 @@ async def cross_check_api(req: Request, uid: str):
         )
 
     # 答案机可见字段仅 unit_title / topic / question（assembler 白名单裁剪）
-    topic = body.get("topic")
     if not isinstance(topic, str) or not topic.strip():
         topic = unit["title"]
     ctx = {
@@ -227,7 +250,60 @@ async def cross_check_api(req: Request, uid: str):
                 "cost_usd": call_cost,
             }
         )
-    return ok({"answers": answers, "session_id": session_id})
+    return {"answers": answers, "session_id": session_id}
+
+
+@api_router.post("/units/{uid}/answers/cross-check", dependencies=[Depends(write_security)])
+async def cross_check_api(req: Request, uid: str):
+    """多答案机交叉验证：每模型一次调用、各自记账（llm_call）+ 各自写 turn。
+
+    请求体：`{question, model_ids?, session_id?, topic?}`
+    响应：`{answers: [{model, text, tokens_in, tokens_out, cost_usd}], session_id}`
+    """
+    pid = _require_pid()
+    _unit(pid, uid)  # 保持既有行为：单元不存在先于请求体校验失败
+    body = await _parse_body(req)
+    question = body.get("question")
+    if not isinstance(question, str) or not question.strip():
+        raise BizError("C400001", msg="question 必填")
+
+    model_ids = _model_ids(body.get("model_ids"), "answer_machine")
+    session_id = body.get("session_id") or None
+    topic = body.get("topic")
+    return ok(
+        _cross_check_impl(
+            pid, uid, question, model_ids, session_id, topic=topic
+        )
+    )
+
+
+@api_router.post(
+    "/units/{uid}/answers/cross-check/auto", dependencies=[Depends(write_security)]
+)
+async def cross_check_auto_api(req: Request, uid: str):
+    """自动三模型交叉验证（C12）：按 provider 去重取每家首个模型（最多 3 个）。
+
+    请求体：`{question, session_id?}`
+    响应：`{answers: [...], session_id, models: [model_id, ...]}`
+    不足 2 家 provider → C400001（无法构成交叉验证）。不做密钥预检。
+    """
+    pid = _require_pid()
+    body = await _parse_body(req)
+    question = body.get("question")
+    if not isinstance(question, str) or not question.strip():
+        raise BizError("C400001", msg="question 必填")
+
+    model_ids = _auto_model_ids(limit=3)
+    if len(model_ids) < 2:
+        raise BizError(
+            "C400001",
+            msg="自动交叉验证至少需要 2 家已注册厂商（当前不足，请检查 models.yaml）",
+        )
+
+    session_id = body.get("session_id") or None
+    data = _cross_check_impl(pid, uid, question, model_ids, session_id)
+    data["models"] = model_ids
+    return ok(data)
 
 
 # ---------------------------------------------------------------------------

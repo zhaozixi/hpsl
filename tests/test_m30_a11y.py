@@ -98,7 +98,9 @@ def test_quota_modal_dialog_semantics_and_close(client, csrf_headers):
     assert 'aria-labelledby="quota-title-s1"' in r.text
     assert 'id="quota-title-s1"' in r.text
     assert "关闭" in r.text
-    assert "this.closest('.modal').remove()" in r.text
+    # C9：关闭按钮改用 data-action 委托（严格 CSP 禁止内联 onclick）
+    assert 'data-action="close-modal"' in r.text
+    assert "this.closest('.modal').remove()" not in r.text
 
 
 # ---------------------------------------------------------------------------

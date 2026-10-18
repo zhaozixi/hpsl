@@ -18,7 +18,7 @@
   <!-- 步骤 1：建项目 -->
   <section class="step" id="step-1">
     <h2>第 1 步 · 创建项目</h2>
-    <form id="form-1" onsubmit="event.preventDefault(); stepCreate();">
+    <form id="form-1" data-action="wizard-step1">
       <label>项目名称 <input id="p-name" type="text" required maxlength="200" placeholder="例如：Python 数据分析入门"></label>
       <label>学习目标 <input id="p-goal" type="text" required maxlength="500" placeholder="例如：能独立完成一份数据分析报告"></label>
       <label>初始认识（可选）<textarea id="p-belief" rows="3" maxlength="2000" placeholder="你对这个主题目前的了解"></textarea></label>
@@ -30,7 +30,7 @@
   <!-- 步骤 2：填密钥 -->
   <section class="step" id="step-2">
     <h2>第 2 步 · 填写模型密钥</h2>
-    <form id="form-2" onsubmit="event.preventDefault(); stepSaveKey();">
+    <form id="form-2" data-action="wizard-step2">
       <label>用哪家模型（Provider）
         <select id="p-provider">
           {% for p in providers %}<option value="{{ p.provider }}">{{ p.display }}</option>{% endfor %}
@@ -46,7 +46,7 @@
   <section class="step" id="step-3">
     <h2>第 3 步 · 测试连接</h2>
     <p>用第 2 步所选的模型做一次最小探活，看看密钥和网络的连接是否正常。</p>
-    <button id="btn-test" class="btn btn-primary" type="button" onclick="stepTest()">测试连接</button>
+    <button id="btn-test" class="btn btn-primary" type="button" data-action="wizard-test">测试连接</button>
     <div class="result" id="r-3"></div>
   </section>
 
@@ -61,7 +61,7 @@
   </section>
 </div>
 
-<script>
+<script nonce="{{ request.state.csp_nonce if request is defined else '' }}">
 function csrf() {
   const c = document.cookie.split('; ').find(x => x.startsWith('hpsl_csrf='));
   return c ? c.split('=')[1] : '';

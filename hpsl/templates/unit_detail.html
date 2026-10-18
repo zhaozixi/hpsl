@@ -76,6 +76,40 @@
 </section>
 
 <section>
+  <h2>固定三问（重述判据）</h2>
+  <p class="text-muted">论文口径的稳定判据：<b>它解决什么问题／它怎么工作／什么条件不适用</b>。三问都答完才算一次完整重述；判据固定，不同单元的通过率才是同一把尺子。</p>
+  <form hx-post="/api/v1/units/{{ unit.id }}/three-questions" hx-target="#three-q-result" hx-swap="innerHTML">
+    <p>
+      <label>① 它解决什么问题<br>
+        <textarea class="textarea" name="what_problem" rows="3" required maxlength="1000"
+                  placeholder="例：解决「按组汇总时要先拆再合」的问题">{{ three_questions.what_problem if three_questions else '' }}</textarea></label>
+    </p>
+    <p>
+      <label>② 它怎么工作<br>
+        <textarea class="textarea" name="how_it_works" rows="3" required maxlength="1000"
+                  placeholder="例：先按列分组，再对每组分别做聚合，最后合并结果">{{ three_questions.how_it_works if three_questions else '' }}</textarea></label>
+    </p>
+    <p>
+      <label>③ 什么条件不适用<br>
+        <textarea class="textarea" name="when_not_applicable" rows="3" required maxlength="1000"
+                  placeholder="例：数据量极大且分组键高度离散时，内存与耗时都不可接受">{{ three_questions.when_not_applicable if three_questions else '' }}</textarea></label>
+    </p>
+    <p><button class="btn btn-primary" type="submit">记录固定三问</button></p>
+  </form>
+  <div id="three-q-result"></div>
+  {% if three_questions %}
+  <div class="card">
+    <p><small class="text-muted">最近记录：{{ three_questions.recorded_at }}</small></p>
+    <p><b>它解决什么问题：</b>{{ three_questions.what_problem }}</p>
+    <p><b>它怎么工作：</b>{{ three_questions.how_it_works }}</p>
+    <p><b>什么条件不适用：</b>{{ three_questions.when_not_applicable }}</p>
+  </div>
+  {% else %}
+  <p class="ok">本单元尚未记录固定三问（空态）。</p>
+  {% endif %}
+</section>
+
+<section>
   <h2>⑤ 判定闭环</h2>
   <p class="text-muted">达到通过阈值会自动闭环；未达标仍可强行闭环，但必须写理由，且该单元会带「强行闭环」标记、不计入进度。</p>
   {% include "_unit_close_panel.html" %}
@@ -88,8 +122,7 @@
     <input type="hidden" name="unit_id" value="{{ unit.id }}">
     <p>
       <label>角色<br>
-        <select class="select" name="role" id="role-select"
-                onchange="var f=document.getElementById('role-form'); f.setAttribute('hx-post','/api/v1/roles/'+this.value+'/call'); htmx.process(f);">
+        <select class="select" name="role" id="role-select" data-action="role-call">
           <option value="questioner">提问者（苏格拉底式追问）</option>
           <option value="answer_machine">答案机（按需答疑）</option>
           <option value="boundary_setter">出题者（边界题）</option>

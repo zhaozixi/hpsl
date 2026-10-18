@@ -17,41 +17,41 @@
   <section class="card">
     <h2>项目概览</h2>
     <p>项目名、目标、初始认识与配置摘要。</p>
-    <button class="cta" onclick="doExport('project', 'r-project')">导出 project.md</button>
+    <button class="cta" data-action="export" data-kind="projects" data-out="r-project">导出 project.md</button>
     <div class="result" id="r-project"></div>
   </section>
 
   <section class="card">
     <h2>学习单元</h2>
     <p>单元列表与状态（标题、状态、难度档、降级、跳过产出等）。</p>
-    <button class="cta" onclick="doExport('units', 'r-units')">导出 units.md</button>
+    <button class="cta" data-action="export" data-kind="units" data-out="r-units">导出 units.md</button>
     <div class="result" id="r-units"></div>
   </section>
 
   <section class="card">
     <h2>四本账</h2>
     <p>审计日志、缺口、主张核验、复测与模型调用账本摘要。</p>
-    <button class="cta" onclick="doExport('ledger', 'r-ledger')">导出 ledger.md</button>
+    <button class="cta" data-action="export" data-kind="ledger" data-out="r-ledger">导出 ledger.md</button>
     <div class="result" id="r-ledger"></div>
   </section>
 
   <section class="card">
     <h2>概念图谱</h2>
     <p>概念节点与概念之间的关系（concept_edge）。</p>
-    <button class="cta" onclick="doExport('concepts', 'r-concepts')">导出 concepts.md</button>
+    <button class="cta" data-action="export" data-kind="concepts" data-out="r-concepts">导出 concepts.md</button>
     <div class="result" id="r-concepts"></div>
   </section>
 
   <section class="card">
     <h2>对话记录</h2>
     <p>按会话整理的角色对话轮次（时间、模型与内容）。</p>
-    <button class="cta" onclick="doExport('conversations', 'r-conversations')">导出 conversations.md</button>
+    <button class="cta" data-action="export" data-kind="conversations" data-out="r-conversations">导出 conversations.md</button>
     <div class="result" id="r-conversations"></div>
   </section>
 </div>
 {% endif %}
 
-<script>
+<script nonce="{{ request.state.csp_nonce if request is defined else '' }}">
 function csrf() {
   const c = document.cookie.split('; ').find(x => x.startsWith('hpsl_csrf='));
   return c ? c.split('=')[1] : '';

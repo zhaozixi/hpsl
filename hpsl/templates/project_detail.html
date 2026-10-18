@@ -9,7 +9,7 @@
 {% if is_active %}
 <p><span class="badge ok">当前使用中</span> <a href="/unit">进入学习 →</a></p>
 {% else %}
-<p><button class="btn btn-sm" type="button" onclick="hpslSwitchProject('{{ project.id }}', this)">切换到此项目</button></p>
+<p><button class="btn btn-sm" type="button" data-action="switch-project" data-pid="{{ project.id }}">切换到此项目</button></p>
 {% endif %}
 
 {{ help_banner("项目详情",

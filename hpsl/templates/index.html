@@ -26,7 +26,7 @@
     {% if p.id == active_id %}
       <span class="badge ok">当前</span>
     {% else %}
-      <button class="btn btn-sm" type="button" onclick="hpslSwitchProject('{{ p.id }}', this)">切换到此项目</button>
+      <button class="btn btn-sm" type="button" data-action="switch-project" data-pid="{{ p.id }}">切换到此项目</button>
     {% endif %}
   </li>
   {% else %}

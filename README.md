@@ -52,7 +52,7 @@ hpsl serve --no-restore
 # export HPSL_NO_RESTORE_ACTIVE=1                       # bash
 # $env:HPSL_NO_RESTORE_ACTIVE = "1"                     # PowerShell
 
-# 运行全量测试（M0–M36：664 例通过 + 3 例跳过，含零 DDL 守护）
+# 运行全量测试（M0–M36：692 例通过 + 3 例跳过，含零 DDL 守护）
 .venv/Scripts/python.exe -m pytest -q
 ```
 

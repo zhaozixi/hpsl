@@ -276,6 +276,9 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         # Host 白名单（所有请求）；M25 起与文档一致返回 403/C403001
         if not check_host(request.headers.get("host", "")):
             return JSONResponse(status_code=403, content=fail("C403001").to_dict())
+        # M36/C9：每请求 CSP nonce（仅本次响应内的 inline <script> 可用）
+        nonce = secrets.token_urlsafe(16)
+        request.state.csp_nonce = nonce
         response = await call_next(request)
         # CSRF cookie 下发（GET）：无则种，有则回显；httponly=False 供 JS 双提交。
         # 旧值签名无效（如进程重启后 secret 变化）→ 重新签发，避免页面停留在
@@ -287,6 +290,19 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             response.set_cookie(
                 CSRF_COOKIE, cookie, httponly=False, samesite="lax", path="/"
             )
+        # M36/C9：严格 CSP。脚本只允许同源 + 本请求 nonce；内联样式仍允许（HTMX/表格对齐）。
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            f"script-src 'self' 'nonce-{nonce}'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "font-src 'self'; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "frame-ancestors 'none'; "
+            "form-action 'self'"
+        )
         return response
 
 

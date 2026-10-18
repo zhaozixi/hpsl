@@ -4,39 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}HPSL{% endblock %}</title>
+  <!-- 主题：渲染前应用已存偏好，避免闪烁；偏好存 localStorage（零 DDL）。
+       C9：脚本外置到 /static/theme.js（严格 CSP 不允许内联脚本）。 -->
+  <script src="/static/theme.js"></script>
   <!-- HTMX 1.9.12：本地内置，离线可用（升级时替换 /static/htmx.min.js） -->
   <script src="/static/htmx.min.js"></script>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/app.js" defer></script>
-  <!-- 主题：渲染前应用已存偏好，避免闪烁；偏好存 localStorage（零 DDL） -->
-  <script>
-    (function () {
-      try {
-        if (localStorage.getItem('hpsl-theme') === 'dark') {
-          document.documentElement.classList.add('dark');
-        }
-      } catch (e) {}
-    })();
-    function hpslToggleTheme() {
-      var d = document.documentElement;
-      var isDark = d.classList.toggle('dark');
-      try { localStorage.setItem('hpsl-theme', isDark ? 'dark' : 'light'); } catch (e) {}
-      var b = document.getElementById('theme-toggle-btn');
-      if (b) {
-        b.textContent = isDark ? '主题：浅色' : '主题：深色';
-        b.setAttribute('aria-pressed', isDark ? 'true' : 'false');
-      }
-    }
-    function hpslSyncThemeLabel() {
-      var d = document.documentElement;
-      var b = document.getElementById('theme-toggle-btn');
-      if (b) {
-        b.textContent = d.classList.contains('dark') ? '主题：浅色' : '主题：深色';
-        b.setAttribute('aria-pressed', d.classList.contains('dark') ? 'true' : 'false');
-      }
-    }
-    document.addEventListener('DOMContentLoaded', hpslSyncThemeLabel);
-  </script>
 </head>
 <body>
   {% set path = request.url.path if request is defined and request.url else "" %}
@@ -57,7 +31,7 @@
         <a href="/settings" title="调整评判标准与阈值等开关"{% if path.startswith("/settings") %} aria-current="page"{% endif %}>设置</a>
         <a href="/backup" title="把数据导出备份，防止丢失"{% if path.startswith("/backup") %} aria-current="page"{% endif %}>备份</a>
         <a href="/static/help.html" title="看不懂？点这里看操作手册">帮助</a>
-        <button id="theme-toggle-btn" type="button" class="btn btn-sm" onclick="hpslToggleTheme()" aria-pressed="false" title="切换浅色 / 深色背景">主题：深色</button>
+        <button id="theme-toggle-btn" type="button" class="btn btn-sm" data-action="toggle-theme" aria-pressed="false" title="切换浅色 / 深色背景">主题：深色</button>
       </nav>
     </div>
   </header>

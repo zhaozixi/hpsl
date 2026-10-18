@@ -5,15 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HPSL 学习管家 · 操作手册</title>
   <link rel="stylesheet" href="/static/app.css">
-  <script>
-    (function () {
-      try {
-        if (localStorage.getItem('hpsl-theme') === 'dark') {
-          document.documentElement.classList.add('dark');
-        }
-      } catch (e) {}
-    })();
-  </script>
+  <!-- C9：主题脚本外置（严格 CSP 不允许内联脚本） -->
+  <script src="/static/theme.js"></script>
   <style>
     .help-wrap{max-width:880px; margin:0 auto; padding:0 var(--sp-4) var(--sp-8);}
     .help-toc{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:var(--sp-4) var(--sp-5); margin-bottom:var(--sp-6);}

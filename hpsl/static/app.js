@@ -1,3 +1,7 @@
+// M36/C9：严格 CSP 下模板不再使用 hx-on（eval 型内联）。关闭 HTMX 的 eval 能力，
+// 让任何残留的 hx-on / js: 写法直接失效，而不是被静默执行。
+if (window.htmx) { window.htmx.config.allowEval = false; }
+
 // CSRF 双提交：从 hpsl_csrf cookie 读取令牌并注入 HTMX 请求头 X-CSRF-Token。
 // 写请求同时需带 Origin（由浏览器自动附加），两者一致才放行（security.write_security）。
 (function () {
@@ -143,4 +147,94 @@
       if (window.hpslToast) { window.hpslToast('切换失败：网络或服务异常'); }
     });
   };
+})();
+
+
+// M36/C9：统一事件委托。严格 CSP 下不再有内联 onclick/onchange/onsubmit/oninput，
+// 模板统一用 data-action 标记意图，这里分发到各页已定义的全局函数。
+// 页面函数缺失时静默降级（例如局部片段被单独渲染、脚本尚未加载）。
+(function () {
+  function actionOf(el) {
+    return el && el.getAttribute ? el.getAttribute('data-action') : null;
+  }
+  function actionClosest(target) {
+    return target && target.closest ? target.closest('[data-action]') : null;
+  }
+
+  document.addEventListener('click', function (evt) {
+    var el = actionClosest(evt.target);
+    if (!el) return;
+    var action = actionOf(el);
+    if (action === 'toggle-theme') {
+      if (window.hpslToggleTheme) window.hpslToggleTheme();
+    } else if (action === 'graph-zoom') {
+      var factor = parseFloat(el.getAttribute('data-factor'));
+      if (window.zoomBy && isFinite(factor)) window.zoomBy(factor);
+    } else if (action === 'graph-fit') {
+      if (window.fitView) window.fitView();
+    } else if (action === 'graph-auto') {
+      if (window.autoLayout) window.autoLayout();
+    } else if (action === 'graph-hier') {
+      if (window.hierarchicalLayout) window.hierarchicalLayout();
+    } else if (action === 'graph-reset') {
+      if (window.resetView) window.resetView();
+    } else if (action === 'export') {
+      var kind = el.getAttribute('data-kind');
+      // 模板用 data-kind="projects"（入口名），导出接口的 kind 为单数 project。
+      if (kind === 'projects') kind = 'project';
+      var out = el.getAttribute('data-out') || ('r-' + kind);
+      if (kind && window.doExport) window.doExport(kind, out);
+    } else if (action === 'switch-project') {
+      var pid = el.getAttribute('data-pid');
+      if (pid && window.hpslSwitchProject) window.hpslSwitchProject(pid, el);
+    } else if (action === 'wizard-test') {
+      if (window.stepTest) window.stepTest();
+    } else if (action === 'close-modal') {
+      var modal = el.closest('.modal');
+      if (modal) modal.remove();
+    }
+  });
+
+  document.addEventListener('change', function (evt) {
+    var el = actionClosest(evt.target);
+    if (!el || actionOf(el) !== 'role-call') return;
+    // 与原内联 onchange 一致：改角色后重设 hx-post，再让 HTMX 重新处理该表单。
+    var form = document.getElementById('role-form');
+    if (!form || !window.htmx || !el.value) return;
+    form.setAttribute('hx-post', '/api/v1/roles/' + el.value + '/call');
+    window.htmx.process(form);
+  });
+
+  document.addEventListener('input', function (evt) {
+    var el = actionClosest(evt.target);
+    if (!el || actionOf(el) !== 'graph-search') return;
+    if (window.onSearchInput) window.onSearchInput();
+  });
+
+  document.addEventListener('keydown', function (evt) {
+    var el = actionClosest(evt.target);
+    if (!el || actionOf(el) !== 'graph-search') return;
+    if (evt.key === 'Enter' && window.onSearchKey) window.onSearchKey(evt);
+  });
+
+  document.addEventListener('submit', function (evt) {
+    var form = evt.target;
+    if (!form || !form.getAttribute) return;
+    var action = form.getAttribute('data-action');
+    if (!action) return;
+    evt.preventDefault();  // 原内联 onsubmit 均先阻止默认提交
+    if (action === 'save-settings' && window.saveSettings) window.saveSettings(evt);
+    else if (action === 'wizard-step1' && window.stepCreate) window.stepCreate();
+    else if (action === 'wizard-step2' && window.stepSaveKey) window.stepSaveKey();
+  });
+
+  // create.html：原 hx-on::after-request 的逻辑迁到外部脚本（严格 CSP 禁止 hx-on）。
+  // 仅当 create-form 请求成功时重置表单并沿用原有「创建后自动 switch」行为。
+  document.addEventListener('htmx:afterRequest', function (evt) {
+    var el = (evt.detail && evt.detail.elt) || evt.target;
+    if (!el || el.id !== 'create-form') return;
+    if (!(evt.detail && evt.detail.successful)) return;
+    if (el.reset) el.reset();
+    if (typeof window.hpslAfterCreate === 'function') window.hpslAfterCreate();
+  });
 })();

@@ -1,8 +1,8 @@
 # HPSL 剩余开发清单（Roadmap）
 
 > 更新：2026-10-18（M36 REF-3 修复批之后）
-> 基线：M0–M36 已交付；全量 **664 passed / 3 skipped**
-> P0 / P1 / P2 中可修项已清零；剩余为 **C9（CSP/内联 JS）**、**C12（论文能力落差）** 与凭据/环境项。
+> 基线：M0–M36 已交付；全量 **692 passed / 3 skipped**
+> P0 / P1 / P2（含 C9/C12）已清零；剩余仅浏览器 E2E、`pipx` 实测与真实凭据项。
 
 ---
 
@@ -42,14 +42,14 @@
 | E-07 | 周盘点增强 | ✅ M31 |
 | E-08 | 真实 keyring / 第二厂商 | ◐ 跨进程密钥已测；真实钥匙环/真实第二 key 受环境限制 |
 | E-09 | 文档一致性 | ✅ M36（REF-1/REF-2/README/M23 回填 + CHG-07） |
-| **C9** | **严格 CSP / 内联 JS 收敛** | ❌ 未做（独立批次；需外部化 22 handler、5 份 CSRF、5 段 script） |
-| **C12** | **论文能力落差** | ❌ 未做（新功能：结构化三问、自动 3 异构答案机、5 项指标） |
+| **C9** | **严格 CSP / 内联 JS 收敛** | ✅ 已完成（M36：nonce CSP + 22 handler 清零 + theme.js + allowEval=false） |
+| **C12** | **论文能力落差（最小闭环）** | ✅ 已完成（M36：固定三问落库/回显 + 自动三模型 cross-check）；5 项分析指标仍为后续可选 |
 
 ---
 
 ## 3. 发布前检查清单
 
-1. `pytest -q` ≥ 664 passed（3 skipped 为无内联脚本的模板，属预期）；
+1. `pytest -q` ≥ 692 passed（3 skipped 为无内联脚本的模板，属预期）；
 2. `python .workbuddy/delivery/verify_baseline.py` → `BASELINE INTACT`；
 3. `python scripts/check_package.py` → `结果: PASS`（验证 wheel 打全了模板/静态/提示/YAML）；
 4. `python scripts/live_check.py --model deepseek-flash --role clerk --stream` → 退出码 0；
