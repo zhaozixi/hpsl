@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import html as _html
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -355,9 +356,28 @@ async def create_unit_api(req: Request):
         "user",
     )
     if _is_htmx(req):
-        return HTMLResponse(
-            "<p class='ok'>已创建单元，正在刷新…</p>", headers={"HX-Refresh": "true"}
+        # 不再用 HX-Refresh 整页刷新：那会让「已创建」提示刚出现就被新页面冲掉，
+        # 用户看不到任何确认。改为列表区 OOB 就地替换 + 结果区保留提示。
+        units = db.query(
+            pid,
+            "SELECT id,title,status,forced_close,closed_at FROM unit ORDER BY id ASC",
         )
+        snippet = _TEMPLATES.TemplateResponse(
+            request=req, name="_unit_list.html", context={"units": units}
+        ).body.decode("utf-8")
+        oob = snippet.replace(
+            '<section id="unit-list-section">',
+            '<section id="unit-list-section" hx-swap-oob="true">',
+            1,
+        )
+        msg = f'<p class="ok">已创建单元「{_html.escape(title)}」，已加入下方列表。</p>'
+        # 就地刷新不会清空表单，用户容易误以为没提交成功而重复点击；补一段 reset + 聚焦。
+        # HTMX 默认 allowScriptEval=true 会执行 swap 进来的 script；若被关闭则只是不清空，无副作用。
+        reset = (
+            "<script>(function(){var f=document.querySelector('form[hx-post=\"/api/v1/units\"]');"
+            "if(!f){return;}f.reset();var i=f.querySelector('input[name=\"title\"]');if(i){i.focus();}})()</script>"
+        )
+        return HTMLResponse(msg + reset + oob)
     return ok(
         {
             "id": uid,

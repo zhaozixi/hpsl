@@ -58,13 +58,22 @@ def register_error(
 class BizError(Exception):
     """业务异常基类：携带 6 位错误码、HTTP 状态与人读文案。"""
 
-    def __init__(self, code: str, msg: Optional[str] = None, http_status: Optional[int] = None):
+    def __init__(
+        self,
+        code: str,
+        msg: Optional[str] = None,
+        http_status: Optional[int] = None,
+        detail: Optional[str] = None,
+    ):
         if code not in ERROR_REGISTRY:
             raise KeyError(f"未注册的错误码：{code!r}（请先在 errors.py 注册）")
         info = ERROR_REGISTRY[code]
         self.code = code
         self.http_status = http_status if http_status is not None else info[0]
         self.msg = msg if msg is not None else info[4]
+        # 上游/底层的技术原文（如 "Authentication Fails, Your api key: ****abcd is invalid"）。
+        # 与 msg 分离：msg 只放给人看的中文结论，detail 仅在界面里折叠展示、不污染主要提示。
+        self.detail = detail
         self.module = info[1]
         super().__init__(f"[{code}] {self.msg}")
 

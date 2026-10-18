@@ -36,23 +36,7 @@
   <div id="create-result"></div>
 </section>
 
-<section>
-  <h2>单元列表（{{ units|length }}）</h2>
-  {% if units %}
-    <ul id="unit-list" class="card list-clean">
-    {% for u in units %}
-      <li id="unit-{{ u.id }}">
-        <a href="/unit/{{ u.id }}">{{ u.title }}</a>
-        · 状态：{{ state_badge(u.status) }}
-        · 强制闭环：{{ bool_badge(u.forced_close, "是（未走完流程）", "否", true) }}
-        {% if u.closed_at %}· 闭环于：{{ u.closed_at }}{% endif %}
-      </li>
-    {% endfor %}
-    </ul>
-  {% else %}
-    <p class="ok">暂无单元。点上方「创建单元」，先立一个最小目标。</p>
-  {% endif %}
-</section>
+{% include "_unit_list.html" %}
 
 <p><a href="/ledger">前往账本总览</a> · <a href="/">返回首页</a></p>
 {% endif %}

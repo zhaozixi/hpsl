@@ -117,5 +117,8 @@ def test_4xx_maps_to_provider_error_with_detail():
     with pytest.raises(BizError) as exc:
         adapter.complete([Msg("user", "描述图片")])
     assert exc.value.code == "A040001"
-    assert "图片输入格式" in exc.value.msg
     assert "400" in exc.value.msg
+    # M35：上游原文不再塞进 msg（避免英文报错直接糊在用户脸上），改由 detail 承载，
+    # 界面里折叠展示；msg 只留中文结论 + 状态码。
+    assert "图片输入格式" in (exc.value.detail or "")
+    assert "图片输入格式" not in exc.value.msg

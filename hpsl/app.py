@@ -65,6 +65,22 @@ if FastAPI is not None:
     app.add_middleware(security.SecurityMiddleware)
     app.add_middleware(security.TraceIdMiddleware)
 
+    @app.middleware("http")
+    async def _inject_active_ctx(request: Request, call_next):
+        """把「当前项目」塞进 request.state，供 base.html 顶栏常驻提示使用。
+
+        只读进程内缓存（set_active 时写入），**不额外查库**；值为 None 时模板不出横幅。
+        这也兑现「可见」原则：active 是隐式全局上下文（22 个文件 34 处依赖它），
+        让用户在任何页面都能一眼看到自己正在哪个项目里操作。
+        """
+        from . import projects as _projects
+
+        try:
+            request.state.active_label = _projects.active_label()
+        except Exception:  # 顶栏提示失败绝不能影响正常请求
+            request.state.active_label = None
+        return await call_next(request)
+
     # 挂载路由：API（/api/v1）+ 页面（Jinja2 + HTMX）
     app.include_router(projects_routes.api_router)
     app.include_router(roles_routes.api_router)
@@ -112,6 +128,13 @@ if FastAPI is not None:
         tid = getattr(request.state, "trace_id", None)
         if request.headers.get("hx-request") is not None:
             body = f'<p class="result err">{_html.escape(exc.msg)}（{exc.code}）</p>'
+            # 上游/底层原文只放进折叠区：默认收起，不干扰「该怎么办」，要排障时再展开。
+            detail = getattr(exc, "detail", None)
+            if detail:
+                body += (
+                    '<details><summary class="text-muted">技术细节</summary>'
+                    f"<pre>{_html.escape(str(detail))}</pre></details>"
+                )
             return HTMLResponse(content=body, status_code=200)
         return JSONResponse(status_code=exc.http_status, content=fail(exc.code, trace_id=tid).to_dict())
 
@@ -200,7 +223,41 @@ def _ensure_passphrase_interactive(
     return False
 
 
-def serve(host: str = "127.0.0.1", port: int | None = None) -> None:
+def _restore_disabled() -> bool:
+    """是否禁用启动恢复：env `HPSL_NO_RESTORE_ACTIVE` 或 CLI `--no-restore`。
+
+    「可关」原则的落点：恢复是便捷性优化，若用户想要确定性的「每次从空态开始」
+    （或脚本化启动、多实例共用同一 HPSL_HOME），应能一键关掉。
+    """
+    val = os.environ.get("HPSL_NO_RESTORE_ACTIVE", "")
+    return val.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _restore_active_project() -> None:
+    """启动时恢复上次所在项目（best-effort，失败不影响启动）。
+
+    显式调用点只在 serve()：**绝不放模块导入期**——否则测试与其它进程会被外部
+    数据目录的 last_active_at 左右，破坏隔离性。
+    """
+    import logging
+
+    if _restore_disabled():
+        print("[serve] 已按 HPSL_NO_RESTORE_ACTIVE 跳过恢复上次项目")
+        return
+    from . import projects as _projects
+
+    try:
+        vo = _projects.restore_last_active()
+    except Exception:  # 单项目损坏等：降级为空态，绝不阻断启动
+        logging.getLogger("hpsl").warning("恢复上次项目失败，本次以「未选择项目」启动", exc_info=True)
+        return
+    if vo is None:
+        print("[serve] 无历史活跃项目记录，以「未选择项目」启动")
+    else:
+        print(f"[serve] 已恢复到上次项目：{vo.name}（{vo.id}）")
+
+
+def serve(host: str = "127.0.0.1", port: int | None = None, restore: bool = True) -> None:
     """启动 uvicorn 单 worker（监听回环地址）；优雅停机（SIGTERM/SIGINT 由 uvicorn 处理）。"""
     if app is None:
         raise RuntimeError("FastAPI 未安装，无法启动 serve；请先 pip install fastapi uvicorn")
@@ -214,6 +271,12 @@ def serve(host: str = "127.0.0.1", port: int | None = None) -> None:
 
     # 退出前释放全部项目连接（隐含 WAL checkpoint），保证本地库持久化
     atexit.register(db.close_all)
+
+    # 恢复上次所在项目（在库可读之后、开始服务之前；best-effort）
+    if restore:
+        _restore_active_project()
+    else:
+        print("[serve] 已按 --no-restore 跳过恢复上次项目")
 
     # 启动即维护：补当日快照 + 清理各项目过期快照（零 DDL，best-effort，避免阻塞启动）
     try:
@@ -264,6 +327,11 @@ def main(argv: list[str] | None = None) -> None:
     sub_serve = sub.add_parser("serve", help="启动本地服务（127.0.0.1:<port>）")
     sub_serve.add_argument("--host", default="127.0.0.1")
     sub_serve.add_argument("--port", type=int, default=None)
+    sub_serve.add_argument(
+        "--no-restore",
+        action="store_true",
+        help="启动时不恢复上次所在项目（每次从「未选择项目」开始）",
+    )
     sub_rotate = sub.add_parser("rotate", help="立即轮转全部/指定项目的过期快照（可外部 cron）")
     sub_rotate.add_argument("--pid", default=None, help="指定项目 id；缺省则全部项目")
     sub_backup = sub.add_parser("backup", help="立即导出并轮转全部/指定项目快照（可外部 cron）")
@@ -274,7 +342,7 @@ def main(argv: list[str] | None = None) -> None:
     sub_restore.add_argument("--file", required=True, help="备份文件（文件名或 backups/ 内路径）")
     args = parser.parse_args(argv)
     if args.cmd == "serve":
-        serve(host=args.host, port=args.port)
+        serve(host=args.host, port=args.port, restore=not args.no_restore)
     elif args.cmd == "rotate":
         from . import db
         if getattr(args, "pid", None):

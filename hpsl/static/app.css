@@ -52,6 +52,11 @@ p{margin:0 0 var(--sp-3);}
 .site-footer{max-width:var(--maxw); margin:var(--sp-8) auto var(--sp-6); padding:var(--sp-4); color:var(--text-muted); font-size:var(--fs-sm); text-align:center; border-top:1px solid var(--border);}
 .container{max-width:var(--maxw); margin:var(--sp-6) auto; padding:0 var(--sp-4);}
 
+/* 顶栏下方「当前项目」常驻提示：让隐式的 active 上下文变成看得见的状态 */
+.active-ctx{background:var(--info-bg); border-bottom:1px solid var(--info-bd); font-size:var(--fs-sm); color:var(--text);}
+.active-ctx-inner{max-width:var(--maxw); margin:0 auto; padding:var(--sp-2) var(--sp-4); display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2);}
+.active-ctx-inner a{margin-left:auto; font-weight:600; white-space:nowrap;}
+
 /* 按钮 / 表单 */
 .btn{display:inline-flex; align-items:center; justify-content:center; gap:var(--sp-2); padding:var(--sp-2) var(--sp-4); border:1px solid var(--border-strong); background:var(--surface); color:var(--text); border-radius:var(--r-md); font:inherit; font-weight:600; cursor:pointer; transition:background .15s, box-shadow .15s, transform .05s;}
 .btn:hover{background:var(--surface-2); text-decoration:none;}

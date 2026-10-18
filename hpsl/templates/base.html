@@ -61,6 +61,15 @@
       </nav>
     </div>
   </header>
+  {% if request is defined and request.state is defined and request.state.active_label %}
+  <div class="active-ctx" role="status">
+    <div class="active-ctx-inner">
+      当前项目：<b>{{ request.state.active_label }}</b>
+      <span class="text-muted">· 你的所有操作都记在这个项目里</span>
+      <a href="/">切换 / 查看全部项目</a>
+    </div>
+  </div>
+  {% endif %}
   <main id="main" class="container">{% block content %}{% endblock %}</main>
   <footer class="site-footer">HPSL 学习管家 · 帮你把想学会的东西，拆成一个个小单元，一步步学、练、考</footer>
 </body>

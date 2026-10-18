@@ -52,13 +52,18 @@ def test_unit_detail_has_new_sections(client, csrf_headers):
     assert "/api/v1/roles/questioner/call" in r.text
 
 
-def test_create_unit_htmx_refreshes_page(client, csrf_headers):
+def test_create_unit_htmx_updates_list_in_place(client, csrf_headers):
+    """M35：建单元改局部刷新——不再 HX-Refresh 整页刷新（那会让提示瞬间消失）。"""
     pid = _project(client, csrf_headers)
     r = client.post(
         "/api/v1/units", headers=_htmx(csrf_headers), data={"title": "HTMX 建单元"}
     )
     assert r.status_code == 200
-    assert r.headers.get("HX-Refresh") == "true"
+    assert r.headers.get("HX-Refresh") is None, "不应再整页刷新"
+    # 结果区提示 + 列表区 OOB 就地替换，两者都要有
+    assert "已创建单元" in r.text
+    assert 'hx-swap-oob="true"' in r.text
+    assert "HTMX 建单元" in r.text
     assert db.query(pid, "SELECT count(*) c FROM unit")[0]["c"] == 1
 
 

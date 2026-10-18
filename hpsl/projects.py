@@ -35,6 +35,8 @@ _DIR_MODE = 0o700
 _SUBDIRS = ("backups", "exports", "logs")
 
 _active_pid: Optional[str] = None
+# 顶栏「当前项目」提示用的展示名缓存（随 set_active 更新；不参与业务判定）。
+_active_label: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -181,9 +183,11 @@ def get_project(pid: str) -> ProjectVO:
 
 def set_active(pid: str) -> None:
     """切换 active 项目句柄（跨项目零共享唯一入口）。"""
-    _read_project_row(pid)  # 校验存在（不存在 → A010001）
-    global _active_pid
+    row = _read_project_row(pid)  # 校验存在（不存在 → A010001）
+    global _active_pid, _active_label
     _active_pid = pid
+    # 仅用于界面常驻提示，避免每个请求为顶栏再查一次库；不参与任何业务判定。
+    _active_label = row["name"] or pid
 
 
 def active_project() -> Optional[ProjectVO]:
@@ -194,6 +198,41 @@ def active_project() -> Optional[ProjectVO]:
         return _row_to_vo(_read_project_row(_active_pid))
     except BizError:
         return None
+
+
+def active_label() -> Optional[str]:
+    """当前 active 项目的展示名（顶栏提示用）；未设置则 None。"""
+    return _active_label if _active_pid is not None else None
+
+
+def restore_last_active() -> Optional[ProjectVO]:
+    """启动时恢复「上次所在项目」（显式调用；**不得**在模块导入期执行）。
+
+    恢复源是 `routes/projects.py` 切换端点为 AC7「切换须留痕」写入的
+    `config.last_active_at`，因此本函数**不引入新的可写状态源**：唯一写入点仍是切换，
+    这里只读不写、零 DDL、零新增库对象。
+
+    规则：
+    - 只读：不写 config、不追加审计；
+    - 一个时间戳都没有 → 返回 None（不猜测，保持原有「未选项目」空态）；
+    - 时间戳统一由 `_switch_ts()` 生成（UTC 定长 ISO-8601），可直接字典序比较；
+    - 单个项目读取失败 → 跳过，不影响其它项目；
+    - 选中项目已不可读 → set_active 抛 A010001，由调用方捕获（不影响启动）。
+    """
+    best_pid: Optional[str] = None
+    best_ts = ""
+    for vo in list_projects():
+        try:
+            ts = get_raw_config(vo.id).get("last_active_at")
+        except BizError:
+            continue
+        if not isinstance(ts, str) or not ts or ts <= best_ts:
+            continue
+        best_pid, best_ts = vo.id, ts
+    if best_pid is None:
+        return None
+    set_active(best_pid)
+    return get_project(best_pid)
 
 
 def get_effective_config(pid: str) -> ConfigVO:

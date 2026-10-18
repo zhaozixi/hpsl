@@ -26,9 +26,28 @@
 </section>
 
 <section>
-  <h2>生效配置（高级）</h2>
-  <p class="text-muted">下面是系统当前的详细参数（全局设置 + 本项目的覆盖项合并结果）。普通使用不需要看，留作参考。</p>
-  <pre>{{ config }}</pre>
+  <h2>生效配置</h2>
+  <p class="text-muted">全局设置与本项目覆盖项合并后的结果。日常使用不用改，了解即可；要调阈值请去「设置」。</p>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>项</th><th>值</th><th>含义</th></tr></thead>
+    <tbody>
+      <tr><td>通过阈值</td><td>{{ config.pass_threshold }}</td><td>评判得分达到这个分数，单元就算通过</td></tr>
+      <tr><td>高分 / 低分线</td><td>{{ config.pass_hi }} / {{ config.pass_lo }}</td><td>得分落在这两条线之间时，需要你再确认一次</td></tr>
+      <tr><td>缺口上限</td><td>{{ config.l1_gap_limit }} 条</td><td>单次学习允许留下的待补缺口数量</td></tr>
+      <tr><td>单次时长</td><td>{{ config.session_minutes }} 分钟</td><td>一个学习单元建议的专注时长</td></tr>
+      <tr><td>零缺口比例</td><td>{{ config.zero_gap_max }}</td><td>允许「完全没发现缺口」的单元占比上限</td></tr>
+      <tr><td>强行闭环比例</td><td>{{ config.forced_close_max }}</td><td>允许未走完流程就标记完成的占比上限</td></tr>
+      <tr><td>跳过产出比例</td><td>{{ config.skipped_produce_max }}</td><td>允许跳过「动手做」的占比上限</td></tr>
+      <tr><td>复测间隔</td><td>{{ config.review_intervals|join('、') }} 天</td><td>学完后第几天回来复测</td></tr>
+      <tr><td>预算上限</td><td>${{ '%.2f'|format(config.budget_cap_usd) }}</td><td>这个项目允许的模型调用总花费（按美元计价，与价格表统计口径一致）</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <details>
+    <summary class="text-muted">查看原始配置（排障用）</summary>
+    <pre>{{ config }}</pre>
+  </details>
 </section>
 
 <p><a href="/">返回列表</a></p>

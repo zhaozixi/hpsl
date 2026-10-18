@@ -23,6 +23,21 @@ from ..common.errors import BizError
 from .base import ERR_KEY_MISSING, ERR_PROVIDER_EXHAUSTED, ERR_STRUCTURED, Msg, ProviderAdapter, Reply, _parse_structured
 
 
+_HTTP_HINTS = {
+    400: "请求被拒绝（多半是模型名或参数不适用）",
+    401: "密钥无效或已失效，请到「设置 → 密钥」重新填写",
+    403: "密钥没有访问该模型的权限，请检查账号权限",
+    404: "模型或接口地址不存在，请检查模型名是否正确",
+    413: "请求内容过大，请缩短输入或减少资料挂载",
+    422: "参数不被接受，请检查模型名与请求设置",
+}
+
+
+def _http_hint(status: int) -> str:
+    """把上游 HTTP 状态码转成中文结论（上游英文原文另走 BizError.detail）。"""
+    return _HTTP_HINTS.get(status, "请求被拒绝，请检查模型设置")
+
+
 def _default_key_resolver(provider: str) -> Callable[[], str]:
     def _resolve() -> str:
         from ..secrets import keystore
@@ -137,11 +152,17 @@ class OpenAICompatAdapter:
                         if attempt < self.max_retries:
                             time.sleep(self._backoff(attempt))
                             continue
+                        hint = (
+                            "调用太频繁，请稍后再试"
+                            if status == 429
+                            else "服务端暂时不可用，请稍后再试"
+                        )
                         raise BizError(
                             ERR_PROVIDER_EXHAUSTED,
-                            msg=f"Provider {self._provider} 调用失败（重试耗尽，末次 {status}）",
+                            msg=f"{self._provider} {hint}（已重试 {self.max_retries} 次，末次 {status}）",
                         )
-                    # 其它 4xx（参数/图片格式/鉴权等）：带上上游 error，不要误报"结构异常"
+                    # 其它 4xx（参数/图片格式/鉴权等）：给出中文结论，上游原文降级为 detail，
+                    # 不要误报"结构异常"，也不要把英文原文直接怼到用户面前。
                     detail = ""
                     try:
                         payload = resp.json()
@@ -154,7 +175,8 @@ class OpenAICompatAdapter:
                         detail = (getattr(resp, "text", "") or "")[:200]
                     raise BizError(
                         ERR_PROVIDER_EXHAUSTED,
-                        msg=f"Provider {self._provider} 返回 {status}：{detail or '请求被拒绝'}",
+                        msg=f"{self._provider} 返回 {status}：{_http_hint(status)}",
+                        detail=detail or None,
                     )
                 data = resp.json()
                 content, finish = self._extract(data)
@@ -165,7 +187,8 @@ class OpenAICompatAdapter:
                     continue
                 raise BizError(
                     ERR_PROVIDER_EXHAUSTED,
-                    msg=f"Provider {self._provider} 调用失败（重试耗尽）：{exc}",
+                    msg=f"{self._provider} 连不上（已重试 {self.max_retries} 次），请检查网络或接口地址",
+                    detail=f"{type(exc).__name__}: {exc}",
                 ) from exc
 
             # 结构化校验：失败时抛 A040004（与上游状态码无关）

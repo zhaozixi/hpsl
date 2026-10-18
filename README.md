@@ -46,7 +46,13 @@ export HPSL_MASTER_PASSPHRASE="换成一个足够长的口令"      # bash
 hpsl serve
 # 浏览器打开 http://127.0.0.1:8765
 
-# 运行全量测试（M0–M33，576 例通过 + 3 例跳过，含零 DDL 守护）
+# 启动时默认「恢复到上次所在项目」（读各项目 config 里的 last_active_at，只读不写）。
+# 想要每次从「未选择项目」开始，用任一方式关掉：
+hpsl serve --no-restore
+# export HPSL_NO_RESTORE_ACTIVE=1                       # bash
+# $env:HPSL_NO_RESTORE_ACTIVE = "1"                     # PowerShell
+
+# 运行全量测试（M0–M35，594 例通过 + 3 例跳过，含零 DDL 守护）
 .venv/Scripts/python.exe -m pytest -q
 ```
 
@@ -83,7 +89,7 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 安全：本地单机单用户、回环监听；Host/Origin **精确匹配**（含端口）+ 写请求 CSRF 双提交 + 五维限流（process/route/llm_freq/sse_concurrency/write_freq）；无账号体系、无多租户；`/docs` 等文档端点关闭。
 - 密钥：keyring 优先；否则 `HPSL_MASTER_PASSPHRASE` + Argon2id(64MiB/3/4) + **每文件随机 salt**，无口令即拒绝（不降级明文），口令不落盘、不入日志/导出。
 
-## 当前能力（M1–M33）
+## 当前能力（M1–M35）
 
 - 多项目数据底座与审计（M0）
 - 单元八步状态机（INIT → … → CLOSED）+ 复测队列（2/7/21 天）（M2 / M6）
@@ -112,3 +118,5 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 知识库页面与衰减展示：`/knowledge` 挂载/检索/删除；卡片页显示衰减后状态（M31）
 - 新模型：智谱 GLM-5.3-Flash、千问 Qwen3.8-Flash（含图片 content 数组透传，M32）
 - 收尾与工程债：版本 0.1.0、启用范围收敛为国内三家、11 个在用模型全部定价、界面术语中文化、备份页 OOB 局部刷新、前端脚本 `node --check` 真校验、密钥跨进程链路验证、打包自检脚本（M33）
+- 浏览器实测修复：项目切换入口、HTMX 错误片段化（裸 JSON 不再顶掉面板）、闭环区随状态同步、概念图空态、向导横幅/文案就地刷新、宏空白控制（M34）
+- 启动体验：恢复上次所在项目（只读 `last_active_at`，`--no-restore` 可关）、顶栏常驻「当前项目」、错误提示分层（中文结论 + 「技术细节」折叠）、建单元列表就地更新、向导原生表单校验、详情页配置改中文表格（M35）

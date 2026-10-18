@@ -88,7 +88,7 @@ class AnthropicAdapter:
     def _build_headers(self) -> dict:
         key = self._key_resolver()
         if not key:
-            raise BizError(ERR_KEY_MISSING, msg=f"Provider {self._provider} 密钥缺失或无效")
+            raise BizError(ERR_KEY_MISSING, msg=f"{self._provider} 的密钥缺失或无效，请到「设置 → 密钥」填写")
         return {
             "x-api-key": key,
             "anthropic-version": "2023-06-01",
@@ -170,7 +170,7 @@ class AnthropicAdapter:
                         continue
                     raise BizError(
                         ERR_PROVIDER_EXHAUSTED,
-                        msg=f"Provider {self._provider} 调用失败（重试耗尽，末次 {status}）",
+                        msg=f"{self._provider} 调用失败（已重试 {self.max_retries} 次，末次 {status}）",
                     )
                 data = resp.json()
                 content, finish = self._extract(data, json_schema=json_schema)
@@ -181,7 +181,8 @@ class AnthropicAdapter:
                     continue
                 raise BizError(
                     ERR_PROVIDER_EXHAUSTED,
-                    msg=f"Provider {self._provider} 调用失败（重试耗尽）：{exc}",
+                    msg=f"{self._provider} 连不上（已重试 {self.max_retries} 次），请检查网络或接口地址",
+                    detail=f"{type(exc).__name__}: {exc}",
                 ) from exc
 
             if json_schema is not None:
@@ -191,7 +192,8 @@ class AnthropicAdapter:
 
         raise BizError(
             ERR_PROVIDER_EXHAUSTED,
-            msg=f"Provider {self._provider} 调用失败（重试耗尽）：{last_exc}",
+            msg=f"{self._provider} 连不上（已重试 {self.max_retries} 次），请检查网络或接口地址",
+                detail=str(last_exc) if last_exc else None,
         )
 
     # -- 对外：流式补全（P2-10：Messages API 真 SSE） ----------------------
@@ -221,7 +223,7 @@ class AnthropicAdapter:
                 if status >= 400:
                     raise BizError(
                         ERR_PROVIDER_EXHAUSTED,
-                        msg=f"Provider {self._provider} 流式调用失败（HTTP {status}）",
+                        msg=f"{self._provider} 流式调用失败（HTTP {status}），请稍后重试",
                     )
                 for raw_line in resp.iter_lines():
                     line = (raw_line or "").strip()
@@ -257,6 +259,7 @@ class AnthropicAdapter:
         except (httpx.HTTPError, httpx.TransportError) as exc:
             raise BizError(
                 ERR_PROVIDER_EXHAUSTED,
-                msg=f"Provider {self._provider} 流式调用失败：{exc}",
+                msg=f"{self._provider} 流式连接中断，请稍后重试",
+                detail=f"{type(exc).__name__}: {exc}",
             ) from exc
         return
