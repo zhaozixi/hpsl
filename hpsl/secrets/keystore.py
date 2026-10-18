@@ -248,8 +248,14 @@ def _try_keyring_backend() -> Optional[KeyBackend]:
 
 
 def _default_secrets_dir() -> Path:
-    """默认密钥目录（仅在未显式传 secrets_dir 时使用；路由层传 HPSL_HOME/secrets）。"""
-    return Path(__file__).parent
+    """默认密钥目录：`HPSL_HOME/secrets`（与 routes/settings_keys 同一位置）。
+
+    历史实现曾返回本包目录（`hpsl/secrets/`），导致"设置页存进去、适配器读不到"；
+    M28 起统一为 HPSL_HOME/secrets，按调用时解析（测试可逐用例改 HPSL_HOME）。
+    """
+    from .. import config as _config
+
+    return _config.home() / "secrets"
 
 
 def _default_backends(secrets_dir: Optional[str | Path]) -> list[KeyBackend]:

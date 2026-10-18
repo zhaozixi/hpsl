@@ -74,6 +74,12 @@ models:
     derived_from: null
     supports_json: false
     is_fallback_for: null
+  - id: deepseek-flash
+    provider: deepseek
+    family: deepseek
+    derived_from: null
+    supports_json: true
+    is_fallback_for: null
   - id: deepseek-chat
     provider: deepseek
     family: deepseek

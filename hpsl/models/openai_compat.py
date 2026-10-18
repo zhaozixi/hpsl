@@ -59,8 +59,8 @@ class OpenAICompatAdapter:
         self._backoff = backoff if backoff is not None else (lambda n: 2 ** n)  # 1s, 2s, ...
         self._on_call = on_call
         self._key_resolver = key_resolver or _default_key_resolver(self._provider)
-        # 默认走真实 httpx.post；测试可注入 fake
-        self._post = _post or (lambda **kw: httpx.post(**kw))
+        # 默认走真实 httpx.post（url 为位置参数）；测试可注入 fake
+        self._post = _post or (lambda *args, **kw: httpx.post(*args, **kw))
 
     # -- 内部：请求构造 ---------------------------------------------------
     def _build_headers(self) -> dict:

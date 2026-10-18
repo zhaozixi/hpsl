@@ -61,7 +61,7 @@ class AnthropicAdapter:
         self._backoff = backoff if backoff is not None else (lambda n: 2 ** n)
         self._on_call = on_call
         self._key_resolver = key_resolver or _default_key_resolver(self._provider)
-        self._post = _post or (lambda **kw: httpx.post(**kw))
+        self._post = _post or (lambda *args, **kw: httpx.post(*args, **kw))
 
     def _build_headers(self) -> dict:
         key = self._key_resolver()

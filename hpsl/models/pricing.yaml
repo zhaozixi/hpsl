@@ -1,5 +1,7 @@
 # HPSL 价格表（用户可维护）。单位：美元 / 1K tokens。
 # M4 仅占位读取（cost 记账钩子属 M8，此处为后续成本治理预留数据）。
+# 注意：未登记的模型 cost=0（不参与预算拦截）。deepseek-flash（V4.1-Flash）尚未登记，
+# 请按 DeepSeek 官网价格补 in_per_1k / out_per_1k，否则该模型的花费恒为 0。
 
 currency: USD
 

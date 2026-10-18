@@ -21,5 +21,14 @@ test = ["pytest"]
 [project.scripts]
 hpsl = "hpsl.app:main"
 
-[tool.setuptools]
-packages = ["hpsl", "hpsl.common", "hpsl.models"]
+[tool.setuptools.packages.find]
+include = ["hpsl*"]
+
+[tool.setuptools.package-data]
+hpsl = [
+    "templates/*.html",
+    "static/*",
+    "roles/prompts/*.md",
+    "models/*.yaml",
+    "models/README.md",
+]

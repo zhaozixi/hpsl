@@ -53,6 +53,17 @@ pytest -q
 > 此时可不设 `HPSL_MASTER_PASSPHRASE`；否则文件保险库要求口令，缺失会明确报错（A040003）。
 > `/docs`、`/redoc`、`/openapi.json` 已关闭（安全设计 §4.2.2）。
 
+### 真实模型自检（可选）
+
+```bash
+# 密钥只从环境变量读取，不写入仓库；临时 HPSL_HOME 用完即删
+export DEEPSEEK_API_KEY="sk-..."
+python scripts/live_check.py --model deepseek-flash --role clerk
+```
+
+脚本会真实完成：建项目 → 存密钥 → 建单元 → 角色调用 → 记账 → 对话落库，并打印 tokens/花费/计数；
+退出码 0 表示全链路通过。
+
 ## 关键约束（实现期不可变更）
 
 - 路径：`HPSL_HOME/projects/{pid}/project.db`，项目目录权限 0700，每项目独立库物理隔离。

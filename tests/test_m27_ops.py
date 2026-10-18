@@ -211,6 +211,56 @@ def test_htmx_is_local_and_served(client):
     assert "unpkg.com" not in page.text
 
 
+def test_saved_key_visible_to_default_lookup(client, csrf_headers):
+    """回归：设置页写入的密钥必须能被适配器的默认密钥解析读到。
+
+    历史 bug：设置页落 `HPSL_HOME/secrets`，而 keystore 默认目录是源码包目录，
+    导致真实调用永远 A040003（测试因注入 fake adapter 而未暴露）。
+    """
+    from hpsl import config
+    from hpsl.secrets import keystore
+
+    _project(client, csrf_headers)
+    r = client.put(
+        "/api/v1/settings/keys/deepseek", headers=csrf_headers, json={"key": "sk-live-test-9876"}
+    )
+    assert r.json()["code"] == "0", r.text
+
+    assert keystore._default_secrets_dir() == config.home() / "secrets"
+    assert keystore.get_api_key("deepseek") == "sk-live-test-9876"
+    assert keystore.key_status("deepseek")["key_tail"] == "9876"
+
+
+def test_openai_adapter_default_post_accepts_positional_url(monkeypatch):
+    """回归：默认 `_post` 必须接受位置参数 url（历史 `lambda **kw` 会让真实调用 TypeError）。"""
+    from hpsl.models import openai_compat
+
+    seen = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"choices": [{"message": {"content": "pong"}, "finish_reason": "stop"}]}
+
+    def fake_post(*args, **kwargs):
+        seen["args"] = args
+        seen["kwargs"] = kwargs
+        return _Resp()
+
+    monkeypatch.setattr(openai_compat.httpx, "post", fake_post)
+    adapter = openai_compat.OpenAICompatAdapter(
+        name="deepseek",
+        base_url="https://api.deepseek.com/v1",
+        model_id="deepseek-chat",
+        key_resolver=lambda: "sk-unit",
+    )
+    reply = adapter.complete([openai_compat.Msg("user", "ping")])
+    assert reply.text == "pong"
+    assert seen["args"][0] == "https://api.deepseek.com/v1/chat/completions"
+    assert seen["kwargs"]["headers"]["Authorization"] == "Bearer sk-unit"
+
+
 def test_zero_ddl_after_ops(client, csrf_headers):
     pid = _project(client, csrf_headers)
     db.write(pid, "concept", {"id": "k", "name": "v1"}, "user")
