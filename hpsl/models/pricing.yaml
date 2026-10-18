@@ -1,41 +1,66 @@
 # HPSL 价格表（用户可维护）。单位：**美元 / 1K tokens**。
-# 来源：DeepSeek 官方定价页 https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
-#       （原表为「元 / 百万 tokens」；此处按 1 USD = 7.2 CNY 换算，并按**高峰时段**取价，
-#        宁可高估预算也不低估；汇率变动请自行调整数值）
 # 注意：未登记的模型 cost=0（不参与预算拦截），接口会通过 `unpriced_models` 标出。
 #
-# DeepSeek 换算：
-#   deepseek-flash  输入(未命中缓存) 2 元/M = 0.002 元/K → 0.0002778 USD/K
-#                   输出            8 元/M = 0.008 元/K → 0.0011111 USD/K
-#   deepseek-v4-pro 输入            9 元/M = 0.009 元/K → 0.00125   USD/K
-#                   输出           27 元/M = 0.027 元/K → 0.00375   USD/K
+# 换算口径：原表均为「人民币元 / 百万 tokens」，此处按 **1 USD = 7.2 CNY** 换算，
+#   公式：USD_per_1k = 元每百万 ÷ 7.2 ÷ 1000。
+#   厂商调价或汇率变动，请直接改下表数值（这是唯一事实来源，代码不内置价格）。
+# 取价策略：同模型存在多档 / 峰谷价时取**较高档**（宁可高估预算也不低估）。
 #
-# 智谱（https://docs.bigmodel.cn/cn/guide/start/pricing）：
-#   GLM-5.3-Flash 输入 0.8 元/M → 0.0001111 USD/K；输出 2.8 元/M → 0.0003889 USD/K
-# 千问（https://www.qianwenai.com/models/qwen3.8-flash）：
-#   Qwen3.8-Flash 输入 0.8 元/M → 0.0001111 USD/K；输出 2.7 元/M → 0.0003750 USD/K
+# 数据来源（2026-10 公开价目，实际以下列官网为准）：
+#   DeepSeek  https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
+#   智谱 GLM  https://docs.bigmodel.cn/cn/guide/start/pricing
+#   千问 Qwen https://help.aliyun.com/zh/model-studio/models
+#
+# 换算示例：
+#   deepseek-flash   输入  2 元/M → 0.0002778 USD/K；输出  8 元/M → 0.0011111 USD/K
+#   deepseek-v4-pro  输入  9 元/M → 0.00125   USD/K；输出 27 元/M → 0.00375   USD/K
+#   deepseek-reasoner 输入 4 元/M → 0.0005556 USD/K；输出 16 元/M → 0.0022222 USD/K
+#   qwen3.8-flash    输入0.8 元/M → 0.0001111 USD/K；输出 2.7 元/M → 0.0003750 USD/K
+#   qwen-plus        输入0.8 元/M → 0.0001111 USD/K；输出 2  元/M → 0.0002778 USD/K
+#   qwen-max         输入2.4 元/M → 0.0003333 USD/K；输出9.6 元/M → 0.0013333 USD/K
+#   qwen-turbo       输入0.3 元/M → 0.0000417 USD/K；输出0.6 元/M → 0.0000833 USD/K
+#   glm-5.3-flash    输入0.8 元/M → 0.0001111 USD/K；输出 2.8 元/M → 0.0003889 USD/K
+#   glm-4-plus       输入 50 元/M → 0.0069444 USD/K；输出 50 元/M → 0.0069444 USD/K
+#   glm-4-flash      免费额度模型，登记为 0（显式登记即视为"已定价"，不再进未定价提示）
 
 currency: USD
 
 models:
-  gpt-4o-mini:
-    in_per_1k: 0.00015
-    out_per_1k: 0.0006
+  # —— DeepSeek ——
   deepseek-flash:
     in_per_1k: 0.0002778
     out_per_1k: 0.0011111
   deepseek-v4-pro:
     in_per_1k: 0.00125
     out_per_1k: 0.00375
-  glm-5.3-flash:
-    in_per_1k: 0.0001111
-    out_per_1k: 0.0003889
+  deepseek-chat:
+    in_per_1k: 0.0002778
+    out_per_1k: 0.0011111
+  deepseek-reasoner:
+    in_per_1k: 0.0005556
+    out_per_1k: 0.0022222
+
+  # —— 千问 Qwen ——
   qwen3.8-flash:
     in_per_1k: 0.0001111
     out_per_1k: 0.000375
-  deepseek-chat:
-    in_per_1k: 0.0001
-    out_per_1k: 0.0002
-  claude-3-5-haiku-20241022:
-    in_per_1k: 0.00025
-    out_per_1k: 0.00125
+  qwen-plus:
+    in_per_1k: 0.0001111
+    out_per_1k: 0.0002778
+  qwen-max:
+    in_per_1k: 0.0003333
+    out_per_1k: 0.0013333
+  qwen-turbo:
+    in_per_1k: 0.0000417
+    out_per_1k: 0.0000833
+
+  # —— 智谱 GLM ——
+  glm-5.3-flash:
+    in_per_1k: 0.0001111
+    out_per_1k: 0.0003889
+  glm-4-plus:
+    in_per_1k: 0.0069444
+    out_per_1k: 0.0069444
+  glm-4-flash:
+    in_per_1k: 0.0
+    out_per_1k: 0.0

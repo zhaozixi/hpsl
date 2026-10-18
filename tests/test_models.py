@@ -251,24 +251,26 @@ def test_anthropic_retry_exhausted_raises_a040001():
 # AC-M4-3：异构判定
 # ---------------------------------------------------------------------------
 def test_heterogeneous():
-    gpt = get_model("gpt-4o-mini")          # family gpt4o
-    claude = get_model("claude-3-5-haiku-20241022")  # family claude3
-    deepseek = get_model("deepseek-chat")   # family deepseek, derived_from gpt4o
-    assert heterogeneous(gpt, claude) is True
-    assert heterogeneous(claude, deepseek) is True
-    # gpt4o 与 derived_from=gpt4o 的 deepseek → 同源
-    assert heterogeneous(gpt, deepseek) is False
+    ds = get_model("deepseek-flash")        # family deepseek
+    qwen = get_model("qwen-plus")           # family qwen
+    ds_chat = get_model("deepseek-chat")    # family deepseek, derived_from gpt4o
+    ds_reasoner = get_model("deepseek-reasoner")  # family deepseek, derived_from gpt4o
+    assert heterogeneous(ds, qwen) is True
+    assert heterogeneous(qwen, ds_chat) is True
+    # 同 family → 同源；同 derived_from 亦视为同源
+    assert heterogeneous(ds, ds_chat) is False
+    assert heterogeneous(ds_chat, ds_reasoner) is False
 
 
 # ---------------------------------------------------------------------------
 # 注册表 / 工厂
 # ---------------------------------------------------------------------------
 def test_build_adapter_returns_correct_class():
-    a = build_adapter("gpt-4o-mini", key_resolver=lambda: "k")
+    a = build_adapter("deepseek-flash", key_resolver=lambda: "k")
     assert isinstance(a, OpenAICompatAdapter)
-    b = build_adapter("claude-3-5-haiku-20241022", key_resolver=lambda: "k")
-    assert isinstance(b, AnthropicAdapter)
-    assert pricing("gpt-4o-mini")["in_per_1k"] == 0.00015
+    b = build_adapter("glm-5.3-flash", key_resolver=lambda: "k")
+    assert isinstance(b, OpenAICompatAdapter)
+    assert pricing("deepseek-flash")["in_per_1k"] == 0.0002778
 
 
 # ---------------------------------------------------------------------------

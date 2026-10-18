@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import help_banner, tip %}
+{% from "macros.html" import help_banner, tip, actor_label, table_label %}
 {% block title %}HPSL · 账本总览{% endblock %}
 {% block content %}
 
@@ -124,14 +124,14 @@
   {% if audit %}
   <div class="table-wrap">
     <table class="table" id="audit-table">
-      <thead><tr><th scope="col">#</th><th scope="col">时间</th><th scope="col">操作者</th><th scope="col">表</th><th scope="col">行</th><th scope="col">操作</th></tr></thead>
+      <thead><tr><th scope="col">#</th><th scope="col">时间</th><th scope="col">操作者</th><th scope="col">对象</th><th scope="col">记录号</th><th scope="col">操作</th></tr></thead>
       <tbody>
       {% for a in audit %}
         <tr id="audit-{{ a.id }}">
           <td>{{ a.id }}</td>
           <td>{{ a.ts }}</td>
-          <td>{{ a.actor }}</td>
-          <td>{{ a.table_name }}</td>
+          <td>{{ actor_label(a.actor) }}</td>
+          <td>{{ table_label(a.table_name) }}</td>
           <td>{{ a.row_id }}</td>
           <td>
             <button type="button" class="btn btn-sm"

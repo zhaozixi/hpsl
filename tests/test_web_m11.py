@@ -38,11 +38,14 @@ def test_wizard_page_has_four_steps(client, csrf_headers):
     # 四步引导结构
     for sid in ("step-1", "step-2", "step-3", "step-4"):
         assert f'id="{sid}"' in r.text, f"缺少 {sid}"
-    # Provider 下拉含已知 Provider
-    assert 'value="openai"' in r.text
-    assert 'value="anthropic"' in r.text
-    # M22：国内大模型厂商应出现在下拉（覆盖 DeepSeek / 通义 / 智谱 / Kimi / 豆包 等）
-    assert 'value="deepseek"' in r.text
+    # Provider 下拉只应有当前启用的国内三家（国外厂商已从 models.yaml 移除）
+    for p in ("deepseek", "qwen", "zhipu"):
+        assert f'value="{p}"' in r.text, f"缺少厂商 {p}"
+    assert 'value="openai"' not in r.text
+    assert 'value="anthropic"' not in r.text
+    assert 'value="gemini"' not in r.text
+    assert 'value="moonshot"' not in r.text
+    assert 'value="doubao"' not in r.text
 
 
 def test_wizard_page_no_project_shows_note(client):
@@ -57,7 +60,7 @@ def test_wizard_page_no_project_shows_note(client):
 # ---------------------------------------------------------------------------
 def test_set_key_writes_file_and_status(client, csrf_headers):
     _create_and_switch(client, csrf_headers)
-    provider = "openai"
+    provider = "deepseek"
     secret_key = "sk-test-1234"
     r = client.put(
         f"/api/v1/settings/keys/{provider}",
@@ -75,7 +78,7 @@ def test_set_key_writes_file_and_status(client, csrf_headers):
 
 def test_get_keys_only_redacted(client, csrf_headers):
     _create_and_switch(client, csrf_headers)
-    provider = "openai"
+    provider = "deepseek"
     client.put(
         f"/api/v1/settings/keys/{provider}",
         headers=csrf_headers,
@@ -108,7 +111,7 @@ def test_set_key_unknown_provider_rejected(client, csrf_headers):
 # ---------------------------------------------------------------------------
 def test_test_connection_offline_returns_false(client, csrf_headers, monkeypatch):
     _create_and_switch(client, csrf_headers)
-    provider = "openai"
+    provider = "deepseek"
     client.put(
         f"/api/v1/settings/keys/{provider}",
         headers=csrf_headers,
@@ -128,7 +131,7 @@ def test_test_connection_offline_returns_false(client, csrf_headers, monkeypatch
 
 def test_test_connection_missing_key_returns_a040003(client, csrf_headers):
     _create_and_switch(client, csrf_headers)
-    r = client.post("/api/v1/providers/openai/test", headers=csrf_headers)
+    r = client.post("/api/v1/providers/deepseek/test", headers=csrf_headers)
     assert r.status_code == 200, r.text
     d = r.json()["data"]
     assert d["ok"] is False
@@ -152,12 +155,12 @@ def test_zero_ddl_after_key_ops(client, csrf_headers, monkeypatch):
         raise httpx.ConnectError("offline")
 
     monkeypatch.setattr(httpx, "get", fake_get)
-    client.put("/api/v1/settings/keys/openai", headers=csrf_headers, json={"key": "sk-x-1"})
+    client.put("/api/v1/settings/keys/deepseek", headers=csrf_headers, json={"key": "sk-x-1"})
     client.get("/api/v1/settings/keys")
-    client.post("/api/v1/providers/openai/test", headers=csrf_headers)
+    client.post("/api/v1/providers/deepseek/test", headers=csrf_headers)
 
     # 密钥落文件，库对象数不变
-    assert (cfg.home() / "secrets" / "openai.fernet").exists()
+    assert (cfg.home() / "secrets" / "deepseek.fernet").exists()
     assert db.count_user_objects(pid) == 16
 
 
@@ -166,7 +169,7 @@ def test_zero_ddl_after_key_ops(client, csrf_headers, monkeypatch):
 # ---------------------------------------------------------------------------
 def test_connectivity_missing_key(monkeypatch):
     monkeypatch.setattr(connectivity, "httpx", None)  # 防止触网
-    res = connectivity.test_connection("openai", secrets_dir=cfg.home() / "secrets")
+    res = connectivity.test_connection("deepseek", secrets_dir=cfg.home() / "secrets")
     assert res["ok"] is False
     assert res["code"] == "A040003"
 
@@ -181,7 +184,7 @@ def test_connectivity_offline(monkeypatch):
     from hpsl import secrets as secrets_mod
 
     backend = FileBackend(cfg.home() / "secrets")
-    secrets_mod.set_api_key("openai", "sk-x", backend=backend)
-    res = connectivity.test_connection("openai", secrets_dir=cfg.home() / "secrets")
+    secrets_mod.set_api_key("deepseek", "sk-x", backend=backend)
+    res = connectivity.test_connection("deepseek", secrets_dir=cfg.home() / "secrets")
     assert res["ok"] is False
     assert "网络不可达" in res["detail"]

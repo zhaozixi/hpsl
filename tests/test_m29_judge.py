@@ -156,7 +156,7 @@ def test_critic_no_trigger_returns_empty(client, csrf_headers):
         json={
             "claim": "普通断言",
             "critic_model_id": "deepseek-chat",
-            "answer_model_id": "gpt-4o",
+            "answer_model_id": "qwen-plus",
         },
     )
     assert r.json()["code"] == "0", r.text

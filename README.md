@@ -1,6 +1,6 @@
 # HPSL · 本地个人学习管家
 
-HPSL（项目制学习框架工具，Apache-2.0）是一个**本地运行的个人学习管家**：把学习目标拆成单元，按「学 → 练 → 考 → 复习」带流程推进，并记账（AI 花费）、记卡片、画概念图，用治理度量呈现学习进展。当前为 v0，已推进至 **M1–M23**。
+HPSL（项目制学习框架工具，Apache-2.0）是一个**本地运行的个人学习管家**：把学习目标拆成单元，按「学 → 练 → 考 → 复习」带流程推进，并记账（AI 花费）、记卡片、画概念图，用治理度量呈现学习进展。当前为 v0.1，已推进至 **M1–M32**。
 
 ## 技术栈（实现期冻结）
 
@@ -9,7 +9,7 @@ HPSL（项目制学习框架工具，Apache-2.0）是一个**本地运行的个�
 - 写纪律：每项目**单一写连接** + `busy_timeout=5000ms` + 每连接 `foreign_keys=ON`
 - **禁用 REPLACE**：写路径只用 UPDATE/INSERT，REPLACE 会触发外键删除语义且不进审计
 - 审计：`db.write(table, row, actor)` 是账本写入**唯一入口**，同事务追加 `audit_log`
-- 模型接入：httpx 直连，支持 **8 家厂商**（OpenAI / Anthropic / Gemini / DeepSeek / 通义千问 / 智谱 GLM / Moonshot(Kimi) / 豆包），接入协议 3 类（`openai_compat` / `anthropic` / `gemini`）；由 M22 从初始双 Provider 扩展而来
+- 模型接入：httpx 直连，**当前仅接入 3 家国产厂商**（DeepSeek / 通义千问 / 智谱 GLM），统一走 `openai_compat` 协议；`anthropic` / `gemini` 适配器代码保留但**未在注册表启用**（`models.yaml` 已移除对应 provider，向导与设置页不会出现）
 
 ## 工程结构
 
@@ -20,7 +20,7 @@ hpsl/
 ├── db.py               # 连接工厂、幂等迁移、审计写入（db.write 唯一入口）、撤销
 ├── projects.py         # 项目创建/列出/切换/配置合并
 ├── common/             # dto / result / enums / errors（不依赖业务模块）
-├── models/             # 模型适配层：base / openai_compat / anthropic / gemini / connectivity / registry + models.yaml / pricing.yaml
+├── models/             # 模型适配层：base / openai_compat / anthropic / gemini / connectivity / registry + models.yaml / pricing.yaml（仅启用 DeepSeek/Qwen/GLM）
 ├── engine/             # 无界面引擎（headless）：state / grading / claim_check / review_queue / ledger / governance / cost / role_llm
 ├── roles/              # 六角色契约（contracts / assembler / prompts）
 ├── secrets/            # 密钥保险库（keystore：keyring 优先，Fernet+Argon2id 降级）
@@ -32,10 +32,11 @@ hpsl/
 ## 安装与运行
 
 ```bash
-# 创建隔离环境（托管 Python 3.13）
+# 创建隔离环境（Python ≥3.11；本机实测 3.13.14）
 python -m venv .venv
 .venv/Scripts/activate        # Windows
-pip install -e ".[test]"
+pip install -r requirements.txt
+pip install pytest            # 仅跑测试时需要
 
 # 必需：设置密钥库口令（不落盘；丢失则已存 API key 不可恢复）
 export HPSL_MASTER_PASSPHRASE="换成一个足够长的口令"      # bash
@@ -45,9 +46,18 @@ export HPSL_MASTER_PASSPHRASE="换成一个足够长的口令"      # bash
 hpsl serve
 # 浏览器打开 http://127.0.0.1:8765
 
-# 运行全量测试（M0–M32，约 563 例，含零 DDL 守护）
-pytest -q
+# 运行全量测试（M0–M33，576 例通过 + 3 例跳过，含零 DDL 守护）
+.venv/Scripts/python.exe -m pytest -q
 ```
+
+> **本机 venv 说明**：若项目位于非系统盘（如 `D:`），在项目目录内建 venv 会让
+> SQLite 写入慢约 10 倍（实测单文件测试 2.6s → 19.3s）。本机因此把 venv 实际建在
+> 系统盘，再用目录联接挂回项目：
+> ```powershell
+> python -m venv C:\path\to\envs\hpsl
+> New-Item -ItemType Junction -Path .venv -Target C:\path\to\envs\hpsl
+> ```
+> 这样 `.venv/Scripts/python.exe` 照常可用，速度与系统盘一致。
 
 > 若系统安装了 `keyring`（macOS/Windows 凭据管理器），密钥会优先存入系统钥匙环，
 > 此时可不设 `HPSL_MASTER_PASSPHRASE`；否则文件保险库要求口令，缺失会明确报错（A040003）。
@@ -73,14 +83,14 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 安全：本地单机单用户、回环监听；Host/Origin **精确匹配**（含端口）+ 写请求 CSRF 双提交 + 五维限流（process/route/llm_freq/sse_concurrency/write_freq）；无账号体系、无多租户；`/docs` 等文档端点关闭。
 - 密钥：keyring 优先；否则 `HPSL_MASTER_PASSPHRASE` + Argon2id(64MiB/3/4) + **每文件随机 salt**，无口令即拒绝（不降级明文），口令不落盘、不入日志/导出。
 
-## 当前能力（M1–M23）
+## 当前能力（M1–M33）
 
 - 多项目数据底座与审计（M0）
 - 单元八步状态机（INIT → … → CLOSED）+ 复测队列（2/7/21 天）（M2 / M6）
 - 六角色契约与隔离（M3）
 - 验证三件套 + 判分协议与闭环判据（M3–M5）
 - 挑错者与异构策略（M5）
-- 模型接入与密钥：8 家厂商、密钥静态加密持久化、连通性自检（M4 / M11 / M22）
+- 模型接入与密钥：3 家国产厂商（DeepSeek / 千问 / GLM）、密钥静态加密持久化、连通性自检（M4 / M11 / M22）
 - 成本治理与预算三态（ok / warn / blocked，默认 $10/月）（M8）
 - 治理度量四平面 + 软提示（M9 / M10）
 - Web 接入与本地安全（M1 / M10）
@@ -101,3 +111,4 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 平台：CSRF 签名、启动口令提示、Anthropic SSE 流式、可访问性与 graph 事件委托（M30）
 - 知识库页面与衰减展示：`/knowledge` 挂载/检索/删除；卡片页显示衰减后状态（M31）
 - 新模型：智谱 GLM-5.3-Flash、千问 Qwen3.8-Flash（含图片 content 数组透传，M32）
+- 收尾与工程债：版本 0.1.0、启用范围收敛为国内三家、11 个在用模型全部定价、界面术语中文化、备份页 OOB 局部刷新、前端脚本 `node --check` 真校验、密钥跨进程链路验证、打包自检脚本（M33）

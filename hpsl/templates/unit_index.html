@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import help_banner, state_badge %}
+{% from "macros.html" import help_banner, state_badge, bool_badge %}
 {% block title %}HPSL · 单元{% endblock %}
 {% block content %}
 
@@ -44,7 +44,7 @@
       <li id="unit-{{ u.id }}">
         <a href="/unit/{{ u.id }}">{{ u.title }}</a>
         · 状态：{{ state_badge(u.status) }}
-        · 强制闭环：{% if u.forced_close %}是（未走完流程）{% else %}否{% endif %}
+        · 强制闭环：{{ bool_badge(u.forced_close, "是（未走完流程）", "否", true) }}
         {% if u.closed_at %}· 闭环于：{{ u.closed_at }}{% endif %}
       </li>
     {% endfor %}

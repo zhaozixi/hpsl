@@ -136,8 +136,11 @@ def backup_api(pid: str, req: Request):
         raise BizError("B999001", msg=f"备份失败：{exc}") from exc
     name = Path(dest).name
     if _is_htmx(req):
-        return HTMLResponse(
-            f"<p class='ok'>已生成备份：{name}</p>", headers={"HX-Refresh": "true"}
+        # 局部刷新：结果片段 + OOB 同步刷新「历史快照」列表与计数（整页不跳，提示不丢）
+        return _TEMPLATES.TemplateResponse(
+            request=req,
+            name="_backup_result.html",
+            context={"name": name, "backups": db.list_backups(pid)},
         )
     return ok({"backup_file": name, "backup_path": dest, "pid": pid})
 

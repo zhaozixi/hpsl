@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hpsl"
-version = "0.0.0"
-description = "HPSL 项目制学习框架工具 - M0 多项目与数据底座"
+version = "0.1.0"
+description = "HPSL 项目制学习框架工具 —— 本地运行的个人学习管家"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
@@ -13,9 +13,17 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "httpx",
+    "jinja2",
+    "python-multipart",
 ]
 
 [project.optional-dependencies]
+# 密钥静态加密（Fernet + Argon2id）。未安装时应用仍可运行，但密钥只能走 keyring 或拒绝保存。
+crypto = ["cryptography", "argon2-cffi"]
+# 系统钥匙环后端（可选）。
+keyring = ["keyring"]
+# 中文分词；未安装时检索走「中文 bigram + 英文词」兜底。
+tokenize = ["jieba"]
 test = ["pytest"]
 
 [project.scripts]

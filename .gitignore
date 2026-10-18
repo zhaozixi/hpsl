@@ -9,9 +9,16 @@ dist/
 .mypy_cache/
 .ruff_cache/
 
-# Virtualenv（本机 venv 已腐化，不入库）
+# Virtualenv（不入库；本机 .venv 是指向系统盘的目录联接，见 README「安装与运行」）
 .venv/
+.venv-broken/
 venv/
+
+# 打包自检 / 临时产物
+.pkgcheck/
+b4-*/
+tmp*/
+pytest-of-*/
 
 # 本地数据 / 密钥（HPSL_HOME 下的运行态产物）
 *.db

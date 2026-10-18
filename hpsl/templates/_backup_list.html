@@ -1,0 +1,9 @@
+{% if backups %}
+<ul class="card list-clean">
+  {% for b in backups %}
+  <li>{{ b }}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="ok">暂无快照，点击上方按钮导出第一份。</p>
+{% endif %}

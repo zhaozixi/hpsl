@@ -458,6 +458,20 @@ _BACKUP_PREFIX = "project-"
 _BACKUP_RE = re.compile(r"^project-(\d{4})-(\d{2})-(\d{2})")
 
 
+def list_backups(pid: str, dest_dir: Optional[Path] = None) -> list[str]:
+    """列出项目 backups/ 目录下的快照文件名（字典序倒序 = 最新在前；零 DDL、只读）。
+
+    供备份页与 REST 共用：`backup_project` 生成的文件名以 UTC 时间戳开头，
+    字典序即时间序，因此倒序排列即可得到「最新在前」。
+    """
+    d = Path(dest_dir) if dest_dir is not None else _config.project_dir(pid) / "backups"
+    if not d.is_dir():
+        return []
+    files = [p.name for p in d.glob("*.db") if p.is_file()]
+    files.sort(reverse=True)
+    return files
+
+
 def rotate_backups(
     pid: str,
     keep_daily: int = 7,

@@ -25,11 +25,12 @@ from hpsl.models import registry as model_registry
 from hpsl.models.base import Reply
 from hpsl.routes import multi as multi_routes
 
-# 模型（models.yaml）：gpt-4o-mini(family gpt4o) / claude-3-5-haiku(family claude3) /
-# deepseek-chat(family deepseek, derived_from gpt4o) → deepseek 与 gpt 同源，claude 异源。
-GPT = "gpt-4o-mini"
-CLAUDE = "claude-3-5-haiku-20241022"
-DEEPSEEK = "deepseek-chat"  # derived_from gpt4o → 与 GPT 同源
+# 模型（当前 models.yaml 只启用国内三家）：
+#   answer=deepseek-chat 与 same_src=deepseek-reasoner 同 family（且同 derived_from）→ 同源；
+#   other=qwen-plus 属异族 → 异源。
+ANSWER = "deepseek-chat"
+OTHER = "qwen-plus"
+SAME_SRC = "deepseek-reasoner"  # 与 ANSWER 同 family → 同源
 
 # 不编辑 app.py：测试自行挂载 multi router（装配方已挂载则跳过）
 _MULTI_PATH = "/api/v1/units/{uid}/critic/multi"
@@ -43,7 +44,7 @@ class _FakeAdapter:
     name = "fake"
     supports_json = False
 
-    def __init__(self, text="模型回答", model=GPT):
+    def __init__(self, text="模型回答", model=ANSWER):
         self.text = text
         self.model = model
         self.calls = []
@@ -115,17 +116,17 @@ def test_multi_critic_three_models_flags_same_source(client, csrf_headers):
         headers=csrf_headers,
         json={
             "claim": claim,
-            "model_ids": [GPT, CLAUDE, DEEPSEEK],
-            "answer_model_id": GPT,
+            "model_ids": [ANSWER, OTHER, SAME_SRC],
+            "answer_model_id": ANSWER,
             "is_keypoint": True,
         },
     )
     assert r.json()["code"] == "0", r.text
     data = r.json()["data"]
 
-    # 3 个模型 → 3 条挑错；GPT（自比）/ DeepSeek（蒸馏自 gpt4o）同源，Claude 异源
+    # 3 个模型 → 3 条挑错；ANSWER（自比）/ DeepSeek（蒸馏自 gpt4o）同源，Claude 异源
     assert len(data["created"]) == 3
-    assert [c["model"] for c in data["created"]] == [GPT, CLAUDE, DEEPSEEK]
+    assert [c["model"] for c in data["created"]] == [ANSWER, OTHER, SAME_SRC]
     assert [c["same_source"] for c in data["created"]] == [True, False, True]
     # 两两同源矩阵随响应返回（3 个模型 → 3 个 pair）
     assert len(data["pairs"]) == 3
@@ -133,31 +134,31 @@ def test_multi_critic_three_models_flags_same_source(client, csrf_headers):
     rows = db.query(pid, "SELECT * FROM claim_check")
     assert len(rows) == 3
     by_critic = {json.loads(row["providers"])["critic"]: row for row in rows}
-    assert set(by_critic) == {GPT, CLAUDE, DEEPSEEK}
+    assert set(by_critic) == {ANSWER, OTHER, SAME_SRC}
     for row in rows:
         prov = json.loads(row["providers"])
-        assert prov["answer"] == GPT
+        assert prov["answer"] == ANSWER
         assert row["agree"] is None  # 多模型挑错均未评（交由用户仲裁）
-    for critic in (GPT, DEEPSEEK):
+    for critic in (ANSWER, SAME_SRC):
         assert by_critic[critic]["user_ruling"] is None
         assert "同源降级" in (by_critic[critic]["diff"] or "")
     # 异源行：claim=原 claim、residual=0
-    assert by_critic[CLAUDE]["claim"] == claim
-    assert by_critic[CLAUDE]["residual"] == 0
-    assert json.loads(by_critic[CLAUDE]["providers"])["same_source"] is False
+    assert by_critic[OTHER]["claim"] == claim
+    assert by_critic[OTHER]["residual"] == 0
+    assert json.loads(by_critic[OTHER]["providers"])["same_source"] is False
 
 
 def test_same_source_pairs_matrix():
-    pairs = cc.same_source_pairs([GPT, CLAUDE, DEEPSEEK])
+    pairs = cc.same_source_pairs([ANSWER, OTHER, SAME_SRC])
     assert len(pairs) == 3
-    assert [p["a"] for p in pairs] == [GPT, GPT, CLAUDE]
-    assert [p["b"] for p in pairs] == [CLAUDE, DEEPSEEK, DEEPSEEK]
+    assert [p["a"] for p in pairs] == [ANSWER, ANSWER, OTHER]
+    assert [p["b"] for p in pairs] == [OTHER, SAME_SRC, SAME_SRC]
     by_pair = {(p["a"], p["b"]): p["same_source"] for p in pairs}
-    assert by_pair[(GPT, CLAUDE)] is False
-    assert by_pair[(GPT, DEEPSEEK)] is True   # 蒸馏关系 → 同源
-    assert by_pair[(CLAUDE, DEEPSEEK)] is False
+    assert by_pair[(ANSWER, OTHER)] is False
+    assert by_pair[(ANSWER, SAME_SRC)] is True   # 同 family → 同源
+    assert by_pair[(OTHER, SAME_SRC)] is False
     # 单模型 / 空列表 → 无 pair
-    assert cc.same_source_pairs([GPT]) == []
+    assert cc.same_source_pairs([ANSWER]) == []
     assert cc.same_source_pairs([]) == []
 
 
@@ -167,7 +168,7 @@ def test_same_source_pairs_matrix():
 def test_cross_check_two_models_records_and_turns(client, csrf_headers, fake_adapters):
     pid = _project(client, csrf_headers)
     uid = _unit(client, csrf_headers)
-    mids = [GPT, CLAUDE]
+    mids = [ANSWER, OTHER]
     question = "为什么 groupby 会按键排序？"
     r = client.post(
         f"/api/v1/units/{uid}/answers/cross-check",
@@ -179,8 +180,8 @@ def test_cross_check_two_models_records_and_turns(client, csrf_headers, fake_ada
 
     # 每模型一条答案，字段齐全
     assert [a["model"] for a in data["answers"]] == mids
-    assert data["answers"][0]["text"] == f"{GPT} 的答案"
-    assert data["answers"][1]["text"] == f"{CLAUDE} 的答案"
+    assert data["answers"][0]["text"] == f"{ANSWER} 的答案"
+    assert data["answers"][1]["text"] == f"{OTHER} 的答案"
     for a in data["answers"]:
         assert a["tokens_in"] == 10 and a["tokens_out"] == 5
         assert a["cost_usd"] >= 0.0
@@ -199,9 +200,9 @@ def test_cross_check_two_models_records_and_turns(client, csrf_headers, fake_ada
     assert [t["content"] for t in turns if t["role"] == "user"] == [question, question]
 
     # 两个模型各自真实被调用一次，且 system 上下文含单元标题与问题
-    assert len(fake_adapters[GPT].calls) == 1
-    assert len(fake_adapters[CLAUDE].calls) == 1
-    sent = "\n".join(m.content for m in fake_adapters[GPT].calls[0])
+    assert len(fake_adapters[ANSWER].calls) == 1
+    assert len(fake_adapters[OTHER].calls) == 1
+    sent = "\n".join(m.content for m in fake_adapters[ANSWER].calls[0])
     assert "单元M30" in sent and question in sent
 
     sessions = db.query(pid, "SELECT * FROM session")
@@ -235,12 +236,12 @@ def test_rubric_verify_writes_claim_check(client, csrf_headers, fake_adapters):
     rubric = {"criteria": ["能解释 groupby 的排序行为", "能指出 sort 参数的作用"]}
     _attempt(pid, aid, uid, rubric)
     feedback = "疑点：要点 2 与题干不符，建议补充稳定性说明"
-    fake_adapters[GPT] = _FakeAdapter(text=feedback, model=GPT)
+    fake_adapters[ANSWER] = _FakeAdapter(text=feedback, model=ANSWER)
 
     r = client.post(
         f"/api/v1/attempts/{aid}/rubric/verify",
         headers=csrf_headers,
-        json={"model_id": GPT},
+        json={"model_id": ANSWER},
     )
     assert r.json()["code"] == "0", r.text
     data = r.json()["data"]
@@ -255,10 +256,10 @@ def test_rubric_verify_writes_claim_check(client, csrf_headers, fake_adapters):
     assert row["agree"] is None
     assert row["residual"] == 0
     assert row["unit_id"] == uid
-    assert json.loads(row["providers"]) == {"verifier": GPT, "attempt_id": aid}
+    assert json.loads(row["providers"]) == {"verifier": ANSWER, "attempt_id": aid}
 
     # 调用消息：system=核对指令；user=评分要点 JSON
-    sent = fake_adapters[GPT].calls[0]
+    sent = fake_adapters[ANSWER].calls[0]
     assert sent[0].role == "system" and "核对评分要点是否有误" in sent[0].content
     assert sent[1].role == "user"
     assert "groupby" in sent[1].content
@@ -273,7 +274,7 @@ def test_rubric_verify_attempt_missing_or_empty_rubric(client, csrf_headers):
     r = client.post(
         "/api/v1/attempts/no-such-attempt/rubric/verify",
         headers=csrf_headers,
-        json={"model_id": GPT},
+        json={"model_id": ANSWER},
     )
     assert r.json()["code"] == "C400001", r.text
 
@@ -284,7 +285,7 @@ def test_rubric_verify_attempt_missing_or_empty_rubric(client, csrf_headers):
         r = client.post(
             f"/api/v1/attempts/{aid}/rubric/verify",
             headers=csrf_headers,
-            json={"model_id": GPT},
+            json={"model_id": ANSWER},
         )
         assert r.json()["code"] == "C400001", r.text
     assert db.query(pid, "SELECT count(*) c FROM claim_check")[0]["c"] == 0
@@ -294,7 +295,7 @@ def test_rubric_verify_attempt_missing_or_empty_rubric(client, csrf_headers):
 # 缺省模型 + 零 DDL
 # ---------------------------------------------------------------------------
 def test_multi_critic_default_model_ids(client, csrf_headers, monkeypatch):
-    monkeypatch.setattr(model_registry, "pick_default_model", lambda role=None: CLAUDE)
+    monkeypatch.setattr(model_registry, "pick_default_model", lambda role=None: OTHER)
     _project(client, csrf_headers)
     uid = _unit(client, csrf_headers)
     r = client.post(
@@ -304,7 +305,7 @@ def test_multi_critic_default_model_ids(client, csrf_headers, monkeypatch):
     )
     assert r.json()["code"] == "0", r.text
     data = r.json()["data"]
-    assert [c["model"] for c in data["created"]] == [CLAUDE]
+    assert [c["model"] for c in data["created"]] == [OTHER]
     assert data["created"][0]["same_source"] is False  # 未给 answer_model_id，按异源处理
     assert data["pairs"] == []
 
@@ -318,19 +319,19 @@ def test_zero_ddl_after_multi_flows(client, csrf_headers, fake_adapters):
     r1 = client.post(
         f"/api/v1/units/{uid}/critic/multi",
         headers=csrf_headers,
-        json={"claim": "断言", "model_ids": [GPT, CLAUDE], "answer_model_id": GPT},
+        json={"claim": "断言", "model_ids": [ANSWER, OTHER], "answer_model_id": ANSWER},
     )
     assert r1.json()["code"] == "0", r1.text
     r2 = client.post(
         f"/api/v1/units/{uid}/answers/cross-check",
         headers=csrf_headers,
-        json={"question": "问题", "model_ids": [GPT]},
+        json={"question": "问题", "model_ids": [ANSWER]},
     )
     assert r2.json()["code"] == "0", r2.text
     r3 = client.post(
         f"/api/v1/attempts/{aid}/rubric/verify",
         headers=csrf_headers,
-        json={"model_id": CLAUDE},
+        json={"model_id": OTHER},
     )
     assert r3.json()["code"] == "0", r3.text
 

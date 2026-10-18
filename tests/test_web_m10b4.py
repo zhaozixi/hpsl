@@ -39,7 +39,8 @@ def test_backup_page_lists_and_export_button(client, csrf_headers):
     r = client.get("/backup")
     assert r.status_code == 200
     assert "导出当前库快照" in r.text
-    assert "历史快照（0）" in r.text
+    assert "历史快照" in r.text
+    assert 'id="backup-count">0</span>' in r.text
     assert f"/api/v1/projects/{d['id']}/backup" in r.text
 
 
@@ -67,8 +68,9 @@ def test_backup_page_lists_after_export(client, csrf_headers):
     client.post(f"/api/v1/projects/{pid}/backup", headers=csrf_headers)
     r = client.get("/backup")
     assert r.status_code == 200
-    # 列表中出现刚生成的快照
-    assert "历史快照（1）" in r.text
+    # 列表中出现刚生成的快照（计数包在 #backup-count 里，供 HTMX OOB 局部刷新）
+    assert "历史快照" in r.text
+    assert 'id="backup-count">1</span>' in r.text
 
 
 # ---------------------------------------------------------------------------

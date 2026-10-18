@@ -28,11 +28,12 @@ from hpsl.engine.grading import (
     rubric_reveal_allowed,
 )
 
-# 模型（来自 models.yaml）：gpt-4o-mini(family gpt4o) / claude-3-5-haiku(family claude3) /
-# deepseek-chat(family deepseek, derived_from gpt4o)
-CRITIC_GPT = "gpt-4o-mini"
-ANSWER_CLAUDE = "claude-3-5-haiku-20241022"
-CRITIC_DEEPSEEK = "deepseek-chat"  # derived_from gpt4o → 与 gpt-4o-mini 同源
+# 模型（当前 models.yaml 只启用国内三家）：
+#   deepseek-flash(family deepseek) / qwen-plus(family qwen) /
+#   deepseek-chat(family deepseek, derived_from gpt4o)
+CRITIC_DS = "deepseek-flash"
+ANSWER_QWEN = "qwen-plus"
+CRITIC_DS_CHAT = "deepseek-chat"  # 与 deepseek-flash 同 family → 同源
 
 
 def _make_project():
@@ -84,12 +85,12 @@ def test_should_trigger_none():
 # F7.2 同源降级判定
 # ---------------------------------------------------------------------------
 def test_same_source_true_for_distilled():
-    # deepseek derived_from gpt4o → 与 gpt-4o-mini 同源
-    assert cc.same_source(CRITIC_GPT, CRITIC_DEEPSEEK) is True
+    # deepseek-chat 与 deepseek-flash 同 family → 同源
+    assert cc.same_source(CRITIC_DS, CRITIC_DS_CHAT) is True
 
 
 def test_same_source_false_for_diff_families():
-    assert cc.same_source(CRITIC_GPT, ANSWER_CLAUDE) is False
+    assert cc.same_source(CRITIC_DS, ANSWER_QWEN) is False
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +101,7 @@ def test_write_claim_check_and_read():
     _make_judge_unit(pid, "u1")
     cid = cc.write_claim_check(
         pid, claim="某断言", unit_id="u1",
-        providers=[CRITIC_GPT, ANSWER_CLAUDE], agree=0, diff='{"x":1}', residual=1,
+        providers=[CRITIC_DS, ANSWER_QWEN], agree=0, diff='{"x":1}', residual=1,
     )
     rows = db.query(pid, "SELECT * FROM claim_check WHERE id=?", (cid,))
     row = rows[0]
@@ -108,14 +109,14 @@ def test_write_claim_check_and_read():
     assert row["agree"] == 0
     assert row["residual"] == 1
     # providers 为 JSON 字段，db.query 返回字符串，调用方解码
-    assert json.loads(row["providers"]) == [CRITIC_GPT, ANSWER_CLAUDE]
+    assert json.loads(row["providers"]) == [CRITIC_DS, ANSWER_QWEN]
 
 
 def test_record_same_source_warning():
     pid = _make_project()
     _make_judge_unit(pid, "u1", keypoint=True)
     cid = cc.record_same_source_warning(
-        pid, unit_id="u1", critic_model_id=CRITIC_GPT, answer_model_id=CRITIC_DEEPSEEK,
+        pid, unit_id="u1", critic_model_id=CRITIC_DS, answer_model_id=CRITIC_DS_CHAT,
         is_keypoint=True,
     )
     rows = db.query(pid, "SELECT * FROM claim_check WHERE id=?", (cid,))
@@ -181,7 +182,7 @@ def test_close_gate_ss_keypoint_explicit_confirm_ok():
     _make_judge_unit(pid, "u1", keypoint=True)
     # 进入判定前检查已写同源降级警告（真实流程由 trigger_critic_if_needed 触发）
     cc.record_same_source_warning(
-        pid, unit_id="u1", critic_model_id=CRITIC_GPT, answer_model_id=CRITIC_DEEPSEEK,
+        pid, unit_id="u1", critic_model_id=CRITIC_DS, answer_model_id=CRITIC_DS_CHAT,
         is_keypoint=True,
     )
     d = evaluate_close(pid, "u1", 0.9, is_keypoint=True, same_source=True, explicit_confirm=True)
@@ -228,7 +229,7 @@ def test_governance_count_zero_no_violation():
     _make_judge_unit(pid, "u1", keypoint=True)
     # 未触发闭环（仅写同源警告），不应计为自动闭环违规
     cc.record_same_source_warning(
-        pid, unit_id="u1", critic_model_id=CRITIC_GPT, answer_model_id=CRITIC_DEEPSEEK,
+        pid, unit_id="u1", critic_model_id=CRITIC_DS, answer_model_id=CRITIC_DS_CHAT,
         is_keypoint=True,
     )
     assert cc.count_same_source_keypoint_auto_close(pid) == 0
@@ -242,7 +243,7 @@ def test_trigger_critic_same_source_writes_warning():
     _make_judge_unit(pid, "u1", keypoint=True)
     ids = cc.trigger_critic_if_needed(
         pid, unit_id="u1", is_keypoint=True,
-        critic_model_id=CRITIC_GPT, answer_model_id=CRITIC_DEEPSEEK,
+        critic_model_id=CRITIC_DS, answer_model_id=CRITIC_DS_CHAT,
     )
     assert len(ids) == 1
     row = db.query(pid, "SELECT * FROM claim_check WHERE id=?", (ids[0],))[0]
@@ -255,7 +256,7 @@ def test_trigger_critic_not_needed_returns_empty():
     _make_judge_unit(pid, "u1")
     ids = cc.trigger_critic_if_needed(
         pid, unit_id="u1", is_keypoint=False, has_code_num_ref=False, manual=False,
-        critic_model_id=CRITIC_GPT, answer_model_id=ANSWER_CLAUDE,
+        critic_model_id=CRITIC_DS, answer_model_id=ANSWER_QWEN,
     )
     assert ids == []
 

@@ -42,11 +42,11 @@ def test_m12_all_page_templates_extend_base():
 
 
 # ---------------------------------------------------------------------------
-# M22：8 厂商 / 3 类协议 / 适配器工厂 / 异构判定
+# M22 起 Provider 扩展；当前启用范围收敛为国内三家（DeepSeek / 千问 / GLM）
 # ---------------------------------------------------------------------------
 def test_m22_provider_matrix():
     providers = registry.list_providers()
-    assert len(providers) >= 8
+    assert set(providers) == {"deepseek", "qwen", "zhipu"}
     for p in providers:
         assert registry.provider_kind(p) in ("openai_compat", "anthropic", "gemini")
         assert registry.default_base_url(p).startswith("https://")
@@ -67,8 +67,7 @@ def test_m22_models_reference_known_providers():
         ("deepseek-flash", OpenAICompatAdapter),
         ("deepseek-v4-pro", OpenAICompatAdapter),
         ("qwen-plus", OpenAICompatAdapter),
-        ("claude-3-5-haiku-20241022", AnthropicAdapter),
-        ("gemini-1.5-flash", GeminiAdapter),
+        ("glm-5.3-flash", OpenAICompatAdapter),
     ],
 )
 def test_m22_build_adapter_routes_by_kind(model_id, cls):
@@ -79,12 +78,12 @@ def test_m22_build_adapter_routes_by_kind(model_id, cls):
 def test_m22_heterogeneous_rules():
     ds = registry.get_model("deepseek-flash")
     ds_chat = registry.get_model("deepseek-chat")
-    gpt = registry.get_model("gpt-4o")
+    ds_reasoner = registry.get_model("deepseek-reasoner")
     qwen = registry.get_model("qwen-plus")
     assert registry.heterogeneous(ds, qwen) is True       # 不同族
     assert registry.heterogeneous(ds, ds_chat) is False   # 同族
-    # deepseek-chat 声明 derived_from=gpt4o → 与 gpt-4o 同源
-    assert registry.heterogeneous(ds_chat, gpt) is False
+    # deepseek-chat / deepseek-reasoner 均声明 derived_from=gpt4o → 同源
+    assert registry.heterogeneous(ds_chat, ds_reasoner) is False
 
 
 def test_m22_gemini_adapter_is_placeholder():

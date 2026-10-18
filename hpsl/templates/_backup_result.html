@@ -1,0 +1,4 @@
+{# 备份导出结果片段：主片段进 #backup-result，另用 OOB 同步刷新列表与计数。 #}
+<p class="ok">已生成备份：{{ name }}</p>
+<div id="backup-list" hx-swap-oob="true">{% include "_backup_list.html" %}</div>
+<span id="backup-count" hx-swap-oob="true">{{ backups|length }}</span>

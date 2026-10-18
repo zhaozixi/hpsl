@@ -19,7 +19,19 @@ from hpsl.engine.cost import (
     budget_status,
     confirm_continue,
 )
+from hpsl.models import registry as model_registry
 from hpsl.models.base import Reply
+
+# 测试基准模型：随 models.yaml 启用范围而变化（当前注册表仅国内三家）。
+# 断言不写死金额，而是按 pricing.yaml 现算 —— 这样"补价 / 调价"不会破测试。
+TEST_MODEL = "deepseek-flash"
+
+
+def _cost_of(tin, tout, model=TEST_MODEL):
+    """按 pricing.yaml 现算期望成本（USD），与 engine.cost 同一公式。"""
+    p = model_registry.pricing(model)
+    assert p is not None, f"{model} 未在 pricing.yaml 登记"
+    return (tin * p["in_per_1k"] + tout * p["out_per_1k"]) / 1000
 
 
 def _new_pid():
@@ -32,11 +44,10 @@ def _seed(pid, sid, uid):
     db.write(pid, "session", {"id": sid, "unit_id": uid, "started_at": db._now_utc()}, "system")
 
 
-def _reply(model="gpt-4o-mini", prompt=1_000_000, completion=1_000_000, shape="openai"):
+def _reply(model=TEST_MODEL, prompt=1_000_000, completion=1_000_000, shape="openai"):
     """构造 Reply（raw.usage 兼容 OpenAI / Anthropic 两种形态）。
 
-    gpt-4o-mini：in_per_1k=0.00015, out_per_1k=0.0006 → cost=(prompt*0.00015+completion*0.0006)/1000。
-    1M/1M → 0.75 USD。
+    成本期望一律经 `_cost_of()` 现算，不在此写死金额。
     """
     if shape == "anthropic":
         usage = {"input_tokens": prompt, "output_tokens": completion}
@@ -55,12 +66,13 @@ def test_record_call_writes_llm_call_and_returns_vo():
     assert len(rows) == 1
     r = rows[0]
     assert r["role"] == "teacher"
-    assert r["provider"] == "openai"   # 由 model 推导
-    assert r["model"] == "gpt-4o-mini"
+    assert r["provider"] == "deepseek"   # 由 model 推导
+    assert r["model"] == TEST_MODEL
     assert r["tokens_in"] == 1_000_000
     assert r["tokens_out"] == 1_000_000
-    assert abs(r["cost"] - 0.75) < 1e-9
-    assert vo.cost_usd == 0.75
+    expected = _cost_of(1_000_000, 1_000_000)
+    assert abs(r["cost"] - expected) < 1e-9
+    assert vo.cost_usd == expected
     assert vo.status == "ok"
 
 
@@ -68,13 +80,14 @@ def test_record_call_writes_llm_call_and_returns_vo():
 def test_record_call_anthropic_usage_shape():
     pid = _new_pid()
     _seed(pid, "s1", "u1")
-    vo = record_call("critic", _reply(model="claude-3-5-haiku-20241022", shape="anthropic"), "s1", "u1")
+    # 用注册表内的模型 + Anthropic 风格 usage（input_tokens/output_tokens），验证归一化
+    vo = record_call("critic", _reply(shape="anthropic"), "s1", "u1")
     rows = db.query(pid, "SELECT * FROM llm_call")
     assert rows[0]["tokens_in"] == 1_000_000
     assert rows[0]["tokens_out"] == 1_000_000
-    # claude haiku: in_per_1k=0.00025, out_per_1k=0.00125 → (1e6*0.00025+1e6*0.00125)/1000 = 1.5
-    assert abs(rows[0]["cost"] - 1.5) < 1e-9
-    assert vo.cost_usd == 1.5
+    expected = _cost_of(1_000_000, 1_000_000)
+    assert abs(rows[0]["cost"] - expected) < 1e-9
+    assert vo.cost_usd == expected
 
 
 # ---- record_call：未知模型 → cost 0.0 + provider 'unknown' ----
@@ -97,8 +110,8 @@ def test_session_cost_aggregation_ok():
     vo = session_cost("s1")
     assert vo.tokens_in == 3_000_000
     assert vo.tokens_out == 2_000_000
-    # 0.75 + (2e6*0.00015+1e6*0.0006)/1000 = 0.75 + 0.9 = 1.65
-    assert abs(vo.cost_usd - 1.65) < 1e-9
+    expected = _cost_of(1_000_000, 1_000_000) + _cost_of(2_000_000, 1_000_000)
+    assert abs(vo.cost_usd - expected) < 1e-9
     assert vo.cumulative_usd == vo.cost_usd      # 当月仅此会话
     assert vo.budget_cap_usd == 10.0
     assert vo.confirmations == 0
@@ -109,8 +122,9 @@ def test_session_cost_aggregation_ok():
 def test_budget_status_warn():
     pid = _new_pid()
     _seed(pid, "s1", "u1")
-    projects.set_config(pid, {"budget_cap_usd": 1.0}, "user")
-    # 单调用 cost=0.9 → 0.8 ≤ 0.9 < 1.0 → warn
+    cost = _cost_of(6_000_000, 0)
+    # 单调用花费落在 [80%, 100%) 区间 → warn
+    projects.set_config(pid, {"budget_cap_usd": cost / 0.9}, "user")
     record_call("teacher", _reply(prompt=6_000_000, completion=0), "s1", "u1")
     assert budget_status("s1") == "warn"
     assert session_cost("s1").status == "warn"
@@ -120,8 +134,9 @@ def test_budget_status_warn():
 def test_budget_status_blocked():
     pid = _new_pid()
     _seed(pid, "s1", "u1")
-    projects.set_config(pid, {"budget_cap_usd": 0.5}, "user")
-    # 单调用 cost=0.9 ≥ 0.5 → blocked
+    cost = _cost_of(6_000_000, 0)
+    # cap 低于单次花费 → blocked
+    projects.set_config(pid, {"budget_cap_usd": cost * 0.5}, "user")
     record_call("teacher", _reply(prompt=6_000_000, completion=0), "s1", "u1")
     assert budget_status("s1") == "blocked"
     assert session_cost("s1").status == "blocked"
@@ -131,7 +146,8 @@ def test_budget_status_blocked():
 def test_confirm_continue_releases_blocked_session():
     pid = _new_pid()
     _seed(pid, "s1", "u1")
-    projects.set_config(pid, {"budget_cap_usd": 0.5}, "user")
+    cost = _cost_of(6_000_000, 0)
+    projects.set_config(pid, {"budget_cap_usd": cost * 0.5}, "user")
     record_call("teacher", _reply(prompt=6_000_000, completion=0), "s1", "u1")
     assert budget_status("s1") == "blocked"
     vo = confirm_continue("s1", actor="user")
@@ -151,7 +167,7 @@ def test_confirm_continue_releases_blocked_session():
 def test_confirm_continue_idempotent_accumulates():
     pid = _new_pid()
     _seed(pid, "s1", "u1")
-    projects.set_config(pid, {"budget_cap_usd": 0.5}, "user")
+    projects.set_config(pid, {"budget_cap_usd": _cost_of(6_000_000, 0) * 0.5}, "user")
     record_call("teacher", _reply(prompt=6_000_000, completion=0), "s1", "u1")
     confirm_continue("s1", actor="user")
     confirm_continue("s1", actor="user")
@@ -167,13 +183,14 @@ def test_monthly_cumulative_across_sessions():
     _seed(pid, "s1", "u1")
     _seed(pid, "s2", "u1")
     projects.set_config(pid, {"budget_cap_usd": 100.0}, "user")
-    record_call("teacher", _reply(), "s1", "u1")   # 0.75
-    record_call("critic", _reply(), "s2", "u1")    # 0.75
-    # 每会话自身花费 0.75，但当月累计 = 1.5
-    assert session_cost("s1").cost_usd == 0.75
-    assert session_cost("s2").cost_usd == 0.75
-    assert session_cost("s1").cumulative_usd == 1.5
-    assert session_cost("s2").cumulative_usd == 1.5
+    one = _cost_of(1_000_000, 1_000_000)
+    record_call("teacher", _reply(), "s1", "u1")
+    record_call("critic", _reply(), "s2", "u1")
+    # 每会话自身花费 one，但当月累计 = 2 * one
+    assert abs(session_cost("s1").cost_usd - one) < 1e-9
+    assert abs(session_cost("s2").cost_usd - one) < 1e-9
+    assert abs(session_cost("s1").cumulative_usd - 2 * one) < 1e-9
+    assert abs(session_cost("s2").cumulative_usd - 2 * one) < 1e-9
     assert budget_status("s1") == "ok"
 
 
@@ -206,39 +223,43 @@ def test_monthly_cumulative_excludes_other_months():
     _seed(pid, "s1", "u1")
     _seed(pid, "s_old", "u1")
     projects.set_config(pid, {"budget_cap_usd": 100.0}, "user")
-    record_call("teacher", _reply(), "s1", "u1")   # 当月，cost 0.75
+    one = _cost_of(1_000_000, 1_000_000)
+    record_call("teacher", _reply(), "s1", "u1")   # 当月，cost = one
     # 直接插一条上月 ts 的 llm_call（不同会话，避免污染 s1 会话聚合）
     db.write(
         pid, "llm_call",
         {
-            "id": "old1", "role": "teacher", "provider": "openai", "model": "gpt-4o-mini",
+            "id": "old1", "role": "teacher", "provider": "deepseek", "model": TEST_MODEL,
             "session_id": "s_old", "unit_id": "u1", "input_hash": "x",
-            "tokens_in": 1_000_000, "tokens_out": 1_000_000, "cost": 0.75,
+            "tokens_in": 1_000_000, "tokens_out": 1_000_000, "cost": one,
             "ts": "2020-01-15T08:30:00.000Z",
         },
         "system",
     )
     vo = session_cost("s1")
-    assert vo.cost_usd == 0.75            # 仅当月会话聚合
-    assert vo.cumulative_usd == 0.75      # 当月跨会话累计不含上月
+    assert abs(vo.cost_usd - one) < 1e-9            # 仅当月会话聚合
+    assert abs(vo.cumulative_usd - one) < 1e-9      # 当月跨会话累计不含上月
     assert db.query(pid, "SELECT count(*) c FROM llm_call")[0]["c"] == 2
 
 
-# ---- 三态边界：cumulative == 0.8*cap → warn（>= 0.8*cap 触发） ----
+# ---- 三态边界：cumulative ≈ 0.8*cap → warn（>= 0.8*cap 触发） ----
 def test_budget_status_boundary_warn_at_80pct():
     pid = _new_pid()
     _seed(pid, "s1", "u1")
-    projects.set_config(pid, {"budget_cap_usd": 0.9375}, "user")  # 0.8*cap = 0.75
-    record_call("teacher", _reply(), "s1", "u1")   # cost 0.75 == 0.8*cap
+    one = _cost_of(1_000_000, 1_000_000)
+    # cap 使 0.8*cap 恰好落在 one 上；乘 (1-1e-9) 吸收浮点误差，避免边界抖动
+    projects.set_config(pid, {"budget_cap_usd": one / 0.8 * (1 - 1e-9)}, "user")
+    record_call("teacher", _reply(), "s1", "u1")
     assert budget_status("s1") == "warn"
 
 
-# ---- 三态边界：cumulative == 1.0*cap → blocked（>= cap 触发） ----
+# ---- 三态边界：cumulative ≈ 1.0*cap → blocked（>= cap 触发） ----
 def test_budget_status_boundary_blocked_at_100pct():
     pid = _new_pid()
     _seed(pid, "s1", "u1")
-    projects.set_config(pid, {"budget_cap_usd": 0.75}, "user")  # 1.0*cap = 0.75
-    record_call("teacher", _reply(), "s1", "u1")   # cost 0.75 == 1.0*cap
+    one = _cost_of(1_000_000, 1_000_000)
+    projects.set_config(pid, {"budget_cap_usd": one * (1 - 1e-9)}, "user")
+    record_call("teacher", _reply(), "s1", "u1")
     assert budget_status("s1") == "blocked"
 
 
@@ -246,7 +267,7 @@ def test_budget_status_boundary_blocked_at_100pct():
 def test_record_call_no_raw_usage_safe():
     pid = _new_pid()
     _seed(pid, "s1", "u1")
-    reply = Reply(text="x", finish_reason="stop", model="gpt-4o-mini", raw=None)
+    reply = Reply(text="x", finish_reason="stop", model=TEST_MODEL, raw=None)
     vo = record_call("teacher", reply, "s1", "u1")
     r = db.query(pid, "SELECT * FROM llm_call")[0]
     assert r["tokens_in"] == 0 and r["tokens_out"] == 0

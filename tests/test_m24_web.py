@@ -155,11 +155,14 @@ def test_global_error_toast_present():
     assert ".toast" in css
 
 
-def test_backup_htmx_refreshes_page(client, csrf_headers):
+def test_backup_htmx_updates_list_in_place(client, csrf_headers):
     pid = _project(client, csrf_headers)
     r = client.post(
         f"/api/v1/projects/{pid}/backup", headers=_htmx(csrf_headers)
     )
     assert r.status_code == 200
-    assert r.headers.get("HX-Refresh") == "true"
+    # 不再整页刷新（HX-Refresh 会吞掉"已生成备份"提示）：改为主片段 + OOB 同步列表与计数
+    assert r.headers.get("HX-Refresh") is None
     assert "已生成备份" in r.text
+    assert 'id="backup-list" hx-swap-oob="true"' in r.text
+    assert 'id="backup-count" hx-swap-oob="true"' in r.text

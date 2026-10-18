@@ -23,16 +23,8 @@
 </section>
 
 <section>
-  <h2>历史快照（{{ backups|length }}）</h2>
-  {% if backups %}
-    <ul id="backup-list" class="card list-clean">
-    {% for b in backups %}
-      <li id="backup-{{ loop.index }}">{{ b }}</li>
-    {% endfor %}
-    </ul>
-  {% else %}
-    <p class="ok">暂无快照，点击上方按钮导出第一份。</p>
-  {% endif %}
+  <h2>历史快照（<span id="backup-count">{{ backups|length }}</span>）</h2>
+  <div id="backup-list">{% include "_backup_list.html" %}</div>
 </section>
 
 <p><a href="/">返回首页</a></p>

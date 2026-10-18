@@ -1,33 +1,24 @@
-# HPSL 模型注册表（用户可维护）。M4 仅读取以下字段：
+# HPSL 模型注册表（用户可维护）。
 #   id / provider / family / derived_from / supports_json / is_fallback_for
 # - family：模型族（同源判定依据之一）。
 # - derived_from：若模型源于某族（如蒸馏/微调），填被源族名（同源判定依据之二）。
-# - supports_json：是否原生支持结构化响应（OpenAI 兼容走 response_format；
-#   Anthropic 走 tool-use 等价路径）。
+# - supports_json：是否原生支持结构化响应（走 response_format）。
 # - is_fallback_for：声明本模型可作为哪个 provider 的备选（BD-01 不静默切换，
 #   备选选择由上层/CLI 明示）。
 #
-# providers 字段（M22 扩展）：
+# providers 字段：
 #   display：人读展示名（向导下拉 / 设置页）。
 #   kind：接入协议类别，决定适配器与连通性探活分支，取值：
 #       openai_compat | anthropic | gemini
 #   base_url：该厂商默认接入点（密钥经 secrets 模块存储，不进 project.db）。
-# 新增国内外常见大模型时，只需在此追加 provider + 对应 models 条目，
-# 向导下拉 / 密钥存储 / 连通性测试将自动覆盖（无需改路由代码）。
+#
+# ⚠️ 启用范围（2026-10 起）：**仅国内三家厂商** —— DeepSeek / 通义千问 / 智谱 GLM，
+#    统一走 openai_compat 协议。OpenAI / Anthropic / Gemini / Moonshot / 豆包
+#    已从本表移除（向导与设置页不再出现，pick_default_model 也不会选中）。
+#    anthropic / gemini 适配器代码仍保留在 models/ 下（协议分支未删），
+#    如需重新启用某家厂商，只需在此追加 provider 与 models 条目，无需改路由代码。
 
 providers:
-  openai:
-    display: OpenAI（GPT 系列）
-    kind: openai_compat
-    base_url: https://api.openai.com/v1
-  anthropic:
-    display: Anthropic（Claude 系列）
-    kind: anthropic
-    base_url: https://api.anthropic.com/v1
-  gemini:
-    display: Google Gemini
-    kind: gemini
-    base_url: https://generativelanguage.googleapis.com/v1beta
   deepseek:
     display: DeepSeek（深度求索）
     kind: openai_compat
@@ -40,40 +31,9 @@ providers:
     display: 智谱 GLM（ChatGLM）
     kind: openai_compat
     base_url: https://open.bigmodel.cn/api/paas/v4
-  moonshot:
-    display: Moonshot（Kimi）
-    kind: openai_compat
-    base_url: https://api.moonshot.cn/v1
-  doubao:
-    display: 豆包（字节火山方舟）
-    kind: openai_compat
-    base_url: https://ark.cn-beijing.volces.com/api/v3
 
 models:
-  - id: gpt-4o-mini
-    provider: openai
-    family: gpt4o
-    derived_from: null
-    supports_json: true
-    is_fallback_for: anthropic
-  - id: gpt-4o
-    provider: openai
-    family: gpt4o
-    derived_from: null
-    supports_json: true
-    is_fallback_for: null
-  - id: claude-3-5-haiku-20241022
-    provider: anthropic
-    family: claude3
-    derived_from: null
-    supports_json: false
-    is_fallback_for: openai
-  - id: gemini-1.5-flash
-    provider: gemini
-    family: gemini15
-    derived_from: null
-    supports_json: false
-    is_fallback_for: null
+  # —— DeepSeek ——
   - id: deepseek-flash
     provider: deepseek
     family: deepseek
@@ -98,6 +58,8 @@ models:
     derived_from: gpt4o
     supports_json: true
     is_fallback_for: null
+
+  # —— 千问 Qwen ——
   - id: qwen3.8-flash
     provider: qwen
     family: qwen
@@ -122,6 +84,8 @@ models:
     derived_from: null
     supports_json: true
     is_fallback_for: null
+
+  # —— 智谱 GLM ——
   - id: glm-5.3-flash
     provider: zhipu
     family: glm
@@ -137,24 +101,6 @@ models:
   - id: glm-4-flash
     provider: zhipu
     family: glm
-    derived_from: null
-    supports_json: true
-    is_fallback_for: null
-  - id: moonshot-v1-8k
-    provider: moonshot
-    family: moonshot
-    derived_from: null
-    supports_json: true
-    is_fallback_for: null
-  - id: moonshot-v1-32k
-    provider: moonshot
-    family: moonshot
-    derived_from: null
-    supports_json: true
-    is_fallback_for: null
-  - id: doubao-pro-32k
-    provider: doubao
-    family: doubao
     derived_from: null
     supports_json: true
     is_fallback_for: null

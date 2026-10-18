@@ -1,4 +1,4 @@
-{% from "macros.html" import state_badge %}
+{% from "macros.html" import state_badge, state_name %}
 <div id="wf-panel">
   <p class="text-muted">学习像过一道道工序：每做到一定程度，就点下面的按钮，把这个单元推进到下一步。</p>
   <p>当前状态：{{ state_badge(unit.status) }}</p>
@@ -9,7 +9,7 @@
     <p><label>跳过产出理由（进入验证时可填）：<input type="text" name="reason" class="input"></label></p>
     <p>
       {% for nxt in allowed_next %}
-      <button type="submit" class="btn btn-sm" name="nxt" value="{{ nxt }}">推进到 {{ nxt }}</button>
+      <button type="submit" class="btn btn-sm" name="nxt" value="{{ nxt }}">推进到「{{ state_name(nxt) }}」</button>
       {% endfor %}
     </p>
   </form>

@@ -58,23 +58,23 @@ def test_origin_requires_exact_origin():
 def test_file_backend_roundtrip_with_random_salt(tmp_path, monkeypatch):
     monkeypatch.setenv("HPSL_MASTER_PASSPHRASE", "unit-test-passphrase")
     b = FileBackend(tmp_path)
-    b.set("openai", "sk-secret-1234")
-    first = (tmp_path / "openai.fernet").read_bytes()
+    b.set("deepseek", "sk-secret-1234")
+    first = (tmp_path / "deepseek.fernet").read_bytes()
     assert first.startswith(b"HPSL2")
     assert b"sk-secret-1234" not in first
-    assert b.get("openai") == "sk-secret-1234"
+    assert b.get("deepseek") == "sk-secret-1234"
 
-    b.set("openai", "sk-secret-1234")  # 同一明文再写一次 → 新随机 salt
-    second = (tmp_path / "openai.fernet").read_bytes()
+    b.set("deepseek", "sk-secret-1234")  # 同一明文再写一次 → 新随机 salt
+    second = (tmp_path / "deepseek.fernet").read_bytes()
     assert first[5:21] != second[5:21], "每次写入应使用新的随机 salt"
-    assert b.get("openai") == "sk-secret-1234"
+    assert b.get("deepseek") == "sk-secret-1234"
 
 
 def test_file_backend_locked_without_passphrase(tmp_path, monkeypatch):
     monkeypatch.delenv("HPSL_MASTER_PASSPHRASE", raising=False)
     b = FileBackend(tmp_path)
     with pytest.raises(BizError) as exc:
-        b.set("openai", "sk-x")
+        b.set("deepseek", "sk-x")
     assert exc.value.code == "A040003"
     assert "HPSL_MASTER_PASSPHRASE" in exc.value.msg
 
@@ -101,7 +101,7 @@ def test_settings_keys_reports_locked(client, csrf_headers, monkeypatch):
     assert "HPSL_MASTER_PASSPHRASE" in r.json()["data"]["lock_reason"]
 
     w = client.put(
-        "/api/v1/settings/keys/openai", headers=csrf_headers, json={"key": "sk-should-fail"}
+        "/api/v1/settings/keys/deepseek", headers=csrf_headers, json={"key": "sk-should-fail"}
     )
     assert w.json()["code"] == "A040003"
 

@@ -29,13 +29,8 @@ _TEMPLATES = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 
 def _list_backups(pid: str) -> list[str]:
-    """返回项目 backups/ 目录下快照文件名（按修改时间倒序，最新在前）。"""
-    d = cfg.project_dir(pid) / "backups"
-    if not d.is_dir():
-        return []
-    files = [p.name for p in d.glob("*.db") if p.is_file()]
-    files.sort(reverse=True)
-    return files
+    """返回项目 backups/ 目录下快照文件名（最新在前）。委托 db.list_backups（唯一实现）。"""
+    return db.list_backups(pid)
 
 
 @page_router.get("/backup", dependencies=[Depends(read_security)])

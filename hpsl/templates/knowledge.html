@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import help_banner %}
+{% from "macros.html" import help_banner, source_kind_label %}
 {% block title %}HPSL · 知识库{% endblock %}
 {% block content %}
 
@@ -35,7 +35,7 @@
     {% for s in sources %}
     <li id="source-{{ s.id }}">
       {{ s.path }}
-      <small>· {{ s.kind }} · 片段 {{ s.chunks }} · 加入于 {{ s.added_at }}</small>
+      <small>· {{ source_kind_label(s.kind) }} · 片段 {{ s.chunks }} · 加入于 {{ s.added_at }}</small>
       <button type="button" class="btn btn-sm"
               hx-delete="/api/v1/sources/{{ s.id }}"
               hx-target="#index-result" hx-swap="innerHTML"

@@ -22,6 +22,15 @@
 {%- endif -%}
 {% endmacro %}
 
+{# —— 单元状态纯文本名（不带徽标）：用于按钮文案、表头等需要内联的位置 —— #}
+{% macro state_name(s) %}
+{%- set m = {
+  "INIT": "未开始", "PICK": "选题中", "LEARN": "学习中", "PRODUCE": "产出中",
+  "VERIFY": "验证中", "JUDGE": "评判中", "INTEGRATE": "整合中", "CLOSED": "已完成"
+} -%}
+{{ m.get(s, s) }}
+{% endmacro %}
+
 {# —— 缺口级别：1/2/3 → 轻微 / 一般 / 严重 —— #}
 {% macro gap_badge(level) %}
 {%- set m = {
@@ -59,6 +68,43 @@
   "cause": "因果", "part": "组成部分", "refine": "细化", "supersede": "更新替代"
 } -%}
 {%- set v = m.get(k, k) -%}{{ v }}{% endmacro %}
+
+{# —— 布尔标记：把 0/1、True/False 翻译成「是 / 否」并配徽标色 —— #}
+{% macro bool_badge(v, yes="是", no="否", danger=false) %}
+{%- if v -%}
+<span class="badge {{ 'err' if danger else 'warn' }}">{{ yes }}</span>
+{%- else -%}
+<span class="badge ok">{{ no }}</span>
+{%- endif -%}
+{% endmacro %}
+
+{# —— 操作者：user / clerk 等内部名 → 中文 —— #}
+{% macro actor_label(a) %}
+{%- set m = {
+  "user": "我", "system": "系统", "clerk": "书记员", "critic": "挑错者",
+  "answer_machine": "答案机", "questioner": "提问者", "boundary_setter": "出题者",
+  "topic_picker": "选题助手"
+} -%}
+{{ m.get(a, a) }}
+{% endmacro %}
+
+{# —— 审计目标表名：库表名 → 中文业务对象 —— #}
+{% macro table_label(t) %}
+{%- set m = {
+  "unit": "学习单元", "attempt": "作答记录", "review": "复测计划", "concept": "概念",
+  "card": "卡片", "gap": "缺口", "gap_candidate": "缺口候选", "session": "学习会话",
+  "llm_call": "模型调用", "claim_check": "挑错记录", "concept_edge": "概念关系",
+  "turn": "对话轮次", "project_config": "项目配置", "source": "知识源",
+  "audit_log": "操作审计", "cost_confirm": "超限确认"
+} -%}
+{{ m.get(t, t) }}
+{% endmacro %}
+
+{# —— 知识源类型：folder / file → 中文 —— #}
+{% macro source_kind_label(k) %}
+{%- set m = {"folder": "文件夹", "file": "文件", "url": "网页"} -%}
+{{ m.get(k, k) }}
+{% endmacro %}
 
 {# —— 模块说明横幅：每个页面顶部放一句大白话，告诉用户「这是干嘛的、怎么用」 —— #}
 {% macro help_banner(title, body) %}
