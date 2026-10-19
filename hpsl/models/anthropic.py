@@ -88,7 +88,7 @@ class AnthropicAdapter:
     def _build_headers(self) -> dict:
         key = self._key_resolver()
         if not key:
-            raise BizError(ERR_KEY_MISSING, msg=f"{self._provider} 的密钥缺失或无效，请到「设置 → 密钥」填写")
+            raise BizError(ERR_KEY_MISSING, msg=f"{self._provider} 的密钥缺失或无效，请到「向导 → 第 2 步」填写")
         return {
             "x-api-key": key,
             "anthropic-version": "2023-06-01",

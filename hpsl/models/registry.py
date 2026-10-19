@@ -253,5 +253,5 @@ def pick_default_model(role: Optional[str] = None) -> str:
                 return cfg.id
     raise BizError(
         "A040003",
-        msg="没有可用的模型密钥：请先在设置页填写任一厂商的 API 密钥（Gemini 当前为占位实现，暂不参与自动选择）",
+        msg="没有可用的模型密钥：请到「向导 → 第 2 步」填写 DeepSeek / 千问 / 智谱 任一家的 API 密钥",
     )
