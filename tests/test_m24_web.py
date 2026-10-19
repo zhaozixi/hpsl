@@ -1,7 +1,7 @@
 """M24 页面层测试：P0-B 表单 / 角色面板 / 三个交互修复（P1-08/09/10/14）。"""
 
 import pytest
-from jinja2 import Environment, FileSystemLoader
+from hpsl.templating import make_templates
 
 from hpsl import db
 from hpsl.models.base import Reply
@@ -142,7 +142,9 @@ def test_settings_uses_fetch_not_htmx_ajax(client, csrf_headers):
 
 
 def test_quota_modal_confirmed_has_no_overlay():
-    env = Environment(loader=FileSystemLoader("hpsl/templates"))
+    # M38：模板统一经 make_templates 装配（注册 usd/cny/both/rate 过滤器），
+    # 裸 Environment 已无法渲染它们，这里跟随应用的真实渲染路径。
+    env = make_templates("hpsl/templates").env
     t = env.get_template("_quota_modal.html")
     cost = {"status": "warn", "cumulative_usd": 10.5, "budget_cap_usd": 10.0}
     confirmed = t.render(session_id="s1", confirmed=True, cost=cost)

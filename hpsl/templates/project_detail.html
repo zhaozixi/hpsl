@@ -40,7 +40,7 @@
       <tr><td>强行闭环比例</td><td>{{ config.forced_close_max }}</td><td>允许未走完流程就标记完成的占比上限</td></tr>
       <tr><td>跳过产出比例</td><td>{{ config.skipped_produce_max }}</td><td>允许跳过「动手做」的占比上限</td></tr>
       <tr><td>复测间隔</td><td>{{ config.review_intervals|join('、') }} 天</td><td>学完后第几天回来复测</td></tr>
-      <tr><td>预算上限</td><td>${{ '%.2f'|format(config.budget_cap_usd) }}</td><td>这个项目允许的模型调用总花费（按美元计价，与价格表统计口径一致）</td></tr>
+      <tr><td>预算上限</td><td>{{ config.budget_cap_usd|both(usd_rate) }}</td><td>这个项目允许的模型调用总花费（记账按美元，人民币按 {{ usd_rate|rate }} 折算）</td></tr>
     </tbody>
   </table>
   </div>

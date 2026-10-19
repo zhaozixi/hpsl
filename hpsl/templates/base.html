@@ -29,6 +29,7 @@
         <a href="/budget" title="看看花了多少、有没有超预算"{% if path.startswith("/budget") %} aria-current="page"{% endif %}>预算</a>
         <a href="/weekly" title="每周一次：集中处理积压的缺口"{% if path.startswith("/weekly") %} aria-current="page"{% endif %}>周盘点</a>
         <a href="/settings" title="调整评判标准与阈值等开关"{% if path.startswith("/settings") %} aria-current="page"{% endif %}>设置</a>
+        <a href="/keys" title="管理调用 AI 模型用的密钥（只存在本机）"{% if path.startswith("/keys") %} aria-current="page"{% endif %}>密钥</a>
         <a href="/backup" title="把数据导出备份，防止丢失"{% if path.startswith("/backup") %} aria-current="page"{% endif %}>备份</a>
         <a href="/static/help.html" title="看不懂？点这里看操作手册">帮助</a>
         <button id="theme-toggle-btn" type="button" class="btn btn-sm" data-action="toggle-theme" aria-pressed="false" title="切换浅色 / 深色背景">主题：深色</button>

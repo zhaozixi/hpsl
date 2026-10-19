@@ -16,7 +16,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from ..templating import make_templates
 
 from .. import projects as proj
 from ..models import registry
@@ -25,7 +25,7 @@ from .security import read_security
 page_router = APIRouter()
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
-_TEMPLATES = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+_TEMPLATES = make_templates(str(_TEMPLATES_DIR))
 
 
 @page_router.get("/wizard", dependencies=[Depends(read_security)])

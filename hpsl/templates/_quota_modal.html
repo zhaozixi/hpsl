@@ -15,7 +15,7 @@
   </div>
   {% elif confirmed %}
   <div class="card">
-    <p class="ok">已确认继续，本会话预算状态：{{ cost_badge(cost.status) }}（累计 ${{ cost.cumulative_usd }} / 上限 ${{ cost.budget_cap_usd }}）</p>
+    <p class="ok">已确认继续，本会话预算状态：{{ cost_badge(cost.status) }}（累计 {{ cost.cumulative_usd|both(usd_rate) }} / 上限 {{ cost.budget_cap_usd|both(usd_rate) }}）</p>
     <p><a href="/budget">返回预算页</a></p>
   </div>
   {% else %}
@@ -24,7 +24,7 @@
       <button type="button" class="modal-close" data-action="close-modal">关闭</button>
       <h3 id="quota-title-{{ session_id }}">预算超限待确认</h3>
       <p>这次学习快到本月花费上限了，确认后继续。</p>
-      <p><small>会话 {{ session_id }} · 累计 ${{ cost.cumulative_usd }} / 上限 ${{ cost.budget_cap_usd }}</small></p>
+      <p><small>会话 {{ session_id }} · 累计 {{ cost.cumulative_usd|both(usd_rate) }} / 上限 {{ cost.budget_cap_usd|both(usd_rate) }}</small></p>
       <form hx-post="/api/v1/budget/confirm" hx-target="#quota-modal-{{ session_id }}" hx-swap="outerHTML">
         <input type="hidden" name="session_id" value="{{ session_id }}">
         <button type="submit" class="btn btn-primary">确认继续</button>

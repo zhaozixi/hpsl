@@ -28,6 +28,7 @@ from ..common.enums import Role
 from ..common.errors import BizError
 from ..common.result import ok
 from ..engine.role_llm import call_role
+from ..common import money as _money
 from ..engine import cost as cost_engine
 from ..models import registry
 from ..roles import assembler
@@ -215,6 +216,8 @@ async def role_call_api(req: Request, role: str):
     reply, cost_vo = call_role(
         target, ctx, adapter=adapter, session_id=session_id, unit_id=unit_id
     )
+    # M38：费用双币展示（美元记账 + 人民币折算），汇率取项目配置
+    rate = proj.get_effective_config(pid).usd_cny_rate
     try:
         provider = registry.get_model(reply.model).provider
     except KeyError:
@@ -225,7 +228,8 @@ async def role_call_api(req: Request, role: str):
             f"{_html.escape(provider)}/{_html.escape(reply.model)}</p>"
             f'<pre class="pre-wrap">{_html.escape(reply.text)}</pre>'
             f'<p class="text-muted">tokens {cost_vo.tokens_in} / {cost_vo.tokens_out} · '
-            f"本次 ${cost_vo.cost_usd:.6f} · 累计 ${cost_vo.cumulative_usd:.4f} · "
+            f"本次 {_money.fmt_both(cost_vo.cost_usd, rate)} · "
+            f"累计 {_money.fmt_both(cost_vo.cumulative_usd, rate)} · "
             f"预算 {cost_vo.status}</p></div>"
             '<p><small><a href="">刷新页面查看完整会话记录</a></small></p>'
         )

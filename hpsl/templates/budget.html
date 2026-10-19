@@ -19,13 +19,13 @@
   {% if rows %}
   <div class="table-wrap">
   <table id="budget-table" class="table">
-    <thead><tr><th scope="col">会话</th><th scope="col">累计(USD)</th><th scope="col">上限</th><th scope="col">状态</th><th scope="col">确认次数</th></tr></thead>
+    <thead><tr><th scope="col">会话</th><th scope="col">累计（美元 / 人民币）</th><th scope="col">上限（美元 / 人民币）</th><th scope="col">状态</th><th scope="col">确认次数</th></tr></thead>
     <tbody>
     {% for r in rows %}
     <tr id="budget-{{ r.session.id }}">
       <td>{{ r.session.id }}</td>
-      <td>{{ r.cost.cumulative_usd }}</td>
-      <td>{{ r.cost.budget_cap_usd }}</td>
+      <td>{{ r.cost.cumulative_usd|both(usd_rate) }}</td>
+      <td>{{ r.cost.budget_cap_usd|both(usd_rate) }}</td>
       <td>{{ cost_badge(r.cost.status) }}</td>
       <td>{{ r.cost.confirmations }}</td>
     </tr>
@@ -36,6 +36,7 @@
   {% else %}
   <p class="ok">暂无会话记录。</p>
   {% endif %}
+  <p class="text-muted"><small>记账口径是美元（与模型价格表一致）；人民币按 {{ usd_rate|rate }} 折算，仅供估算，汇率可在「设置」里调整。</small></p>
 </section>
 
 {% if unpriced %}

@@ -14,10 +14,11 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Request, Depends
-from fastapi.templating import Jinja2Templates
+from ..templating import make_templates
 
 from .. import db, projects as proj
 from ..common.errors import BizError
+from ..common.money import DEFAULT_USD_CNY
 from ..common.result import ok
 from ..engine import cost
 from .security import write_security, read_security
@@ -26,7 +27,7 @@ page_router = APIRouter()
 api_router = APIRouter(prefix="/api/v1")
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
-_TEMPLATES = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+_TEMPLATES = make_templates(str(_TEMPLATES_DIR))
 
 
 async def _parse_body(req: Request) -> dict:
@@ -48,6 +49,14 @@ def _is_htmx(req: Request) -> bool:
     return req.headers.get("hx-request") is not None
 
 
+def _rate() -> float:
+    """当前项目的美元→人民币展示汇率（无激活项目时用默认值）。"""
+    active = proj.active_project()
+    if active is None:
+        return DEFAULT_USD_CNY
+    return proj.get_effective_config(active.id).usd_cny_rate
+
+
 # ---------------------------------------------------------------------------
 # 页面：预算总览 + 超限弹层
 # ---------------------------------------------------------------------------
@@ -59,6 +68,7 @@ def budget_page(req: Request):
             request=req, name="budget.html", context={"error": "尚未选择项目，请先在首页选择或新建项目"}
         )
     pid = active.id
+    rate = proj.get_effective_config(pid).usd_cny_rate  # M38：双币展示汇率
     sessions = db.query(pid, "SELECT * FROM session ORDER BY started_at DESC")
     rows = []
     for s in sessions:
@@ -73,6 +83,7 @@ def budget_page(req: Request):
             "rows": rows,
             "blocked": blocked,
             "cap": (rows[0]["cost"]["budget_cap_usd"] if rows else None),
+            "usd_rate": rate,
             "unpriced": cost.unpriced_models(pid),
         },
     )
@@ -117,6 +128,7 @@ async def budget_confirm_api(req: Request):
                 "cost": None,
                 "error": exc.msg,
                 "error_code": exc.code,
+                "usd_rate": _rate(),
             },
         )
     result = sc.to_dict()
@@ -125,6 +137,11 @@ async def budget_confirm_api(req: Request):
         return _TEMPLATES.TemplateResponse(
             request=req,
             name="_quota_modal.html",
-            context={"session_id": session_id, "cost": result, "confirmed": True},
+            context={
+                "session_id": session_id,
+                "cost": result,
+                "confirmed": True,
+                "usd_rate": _rate(),
+            },
         )
     return ok(result)

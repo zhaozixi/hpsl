@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Request, Depends
-from fastapi.templating import Jinja2Templates
+from ..templating import make_templates
 
 from .. import db, projects as proj, config as cfg
 from ..common.errors import BizError
@@ -33,7 +33,7 @@ page_router = APIRouter()
 api_router = APIRouter(prefix="/api/v1")
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
-_TEMPLATES = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+_TEMPLATES = make_templates(str(_TEMPLATES_DIR))
 
 
 def _active_pid() -> Optional[str]:

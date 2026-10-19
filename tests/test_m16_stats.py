@@ -41,7 +41,7 @@ def test_stats_page_renders(client, csrf_headers):
     _seed(pid)
     r = client.get("/stats")
     assert r.status_code == 200
-    for token in ["概念", "卡片", "复习队列", "累计花费", "单元", "2.5000"]:
+    for token in ["概念", "卡片", "复习队列", "累计花费", "单元", "$2.50", "¥18.00"]:
         assert token in r.text, f"缺少: {token}"
 
 

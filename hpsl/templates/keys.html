@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% from "macros.html" import help_banner %}
+{% block title %}HPSL · 模型密钥{% endblock %}
+{% block content %}
+<h1>模型密钥</h1>
+
+{{ help_banner("密钥只存在你自己的电脑上",
+   "这里管理用来调用 AI 模型的 API 密钥。密钥保存在本机（系统钥匙串或本地加密文件），不会上传，也不会写进项目数据库。换项目不用重新填，改一次全站生效。") }}
+
+{% if locked %}
+<div class="banner warn" role="alert">
+  <b>密钥库当前不可用，暂时存不了新密钥。</b><br>
+  原因：{{ lock_reason }}。<br>
+  <small>解决办法：设置环境变量 <code>HPSL_MASTER_PASSPHRASE</code> 后重启服务（本地加密文件需要一个口令才能加解密）；或让系统提供可用的密钥环。下面的「测试连接」仍可点，但会提示没有密钥。</small>
+</div>
+{% endif %}
+
+<section>
+  <h2>已支持的厂商（{{ providers|length }}）</h2>
+  <p class="text-muted"><small>同一家可以有多个模型，密钥按厂商存一份。填完可直接点「测试连接」确认能不能通。</small></p>
+
+  {% for p in providers %}
+  <div class="card key-row" data-provider="{{ p.provider }}">
+    <p>
+      <b>{{ p.display }}</b>
+      <span class="badge {{ 'ok' if p.has_key else '' }}" data-role="badge">
+        {%- if p.has_key -%}已配置{%- else -%}未配置{%- endif -%}
+      </span>
+      <small class="text-muted" data-role="detail">
+        {%- if p.has_key -%}
+          尾号 {{ p.key_tail }} · 存放于{{ '系统钥匙串' if p.stored_in == 'keyring' else '本地加密文件' }}
+        {%- else -%}
+          还没有填过密钥
+        {%- endif -%}
+      </small>
+    </p>
+    <p>
+      <label for="key-{{ p.provider }}">新的 API 密钥<br>
+        <input class="input" type="password" id="key-{{ p.provider }}" autocomplete="off"
+               placeholder="粘贴密钥（只显示后四位）" {% if locked %}disabled{% endif %}>
+      </label>
+    </p>
+    <p>
+      <button class="btn btn-primary" type="button" data-action="save-key"
+              data-provider="{{ p.provider }}" {% if locked %}disabled{% endif %}>保存</button>
+      <button class="btn" type="button" data-action="test-key" data-provider="{{ p.provider }}">测试连接</button>
+      <span class="result" role="status" aria-live="polite" data-role="result"></span>
+    </p>
+  </div>
+  {% endfor %}
+
+  <p class="text-muted"><small>存储位置：<code>{{ secrets_dir }}</code>。密钥绝不进项目库、不进导出、不进日志；页面上最多只显示后四位。</small></p>
+</section>
+
+<p><a href="/wizard">走一遍新手向导</a> · <a href="/settings">项目设置</a> · <a href="/">返回首页</a></p>
+
+<script nonce="{{ request.state.csp_nonce if request is defined else '' }}">
+(function () {
+  function csrf() {
+    var c = document.cookie.split('; ').find(function (x) { return x.startsWith('hpsl_csrf='); });
+    return c ? decodeURIComponent(c.split('=')[1]) : '';
+  }
+  function row(provider) {
+    return document.querySelector('.key-row[data-provider="' + provider + '"]');
+  }
+  function show(provider, text, cls) {
+    var el = row(provider).querySelector('[data-role="result"]');
+    el.className = 'result ' + (cls || '');
+    el.textContent = text;
+  }
+  function refreshBadge(provider, st) {
+    var r = row(provider);
+    r.querySelector('[data-role="badge"]').textContent = st.has_key ? '已配置' : '未配置';
+    r.querySelector('[data-role="badge"]').className = 'badge ' + (st.has_key ? 'ok' : '');
+    var where = st.stored_in === 'keyring' ? '系统钥匙串' : '本地加密文件';
+    r.querySelector('[data-role="detail"]').textContent = st.has_key
+      ? ('尾号 ' + st.key_tail + ' · 存放于' + where)
+      : '还没有填过密钥';
+  }
+
+  document.addEventListener('click', async function (evt) {
+    var btn = evt.target.closest('[data-action]');
+    if (!btn) { return; }
+    var provider = btn.getAttribute('data-provider');
+    if (!provider) { return; }
+
+    if (btn.getAttribute('data-action') === 'save-key') {
+      var input = document.getElementById('key-' + provider);
+      var key = (input.value || '').trim();
+      if (!key) { show(provider, '请先粘贴密钥', 'err'); return; }
+      btn.disabled = true;
+      show(provider, '保存中…', '');
+      try {
+        var resp = await fetch('/api/v1/settings/keys/' + encodeURIComponent(provider), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
+          body: JSON.stringify({ key: key })
+        });
+        var data = await resp.json();
+        if (data.code === '0') {
+          input.value = '';
+          refreshBadge(provider, data.data);
+          show(provider, '已保存（尾号 ' + (data.data.key_tail || '未记录') + '）', 'ok');
+        } else {
+          show(provider, '保存失败：' + (data.msg || data.code), 'err');
+        }
+      } catch (e) {
+        show(provider, '保存失败：网络或服务异常', 'err');
+      } finally {
+        btn.disabled = false;
+      }
+      return;
+    }
+
+    if (btn.getAttribute('data-action') === 'test-key') {
+      btn.disabled = true;
+      show(provider, '测试中…', '');
+      try {
+        var r2 = await fetch('/api/v1/providers/' + encodeURIComponent(provider) + '/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
+          body: '{}'
+        });
+        var d2 = await r2.json();
+        var d = (d2.data || {});
+        if (d.ok) { show(provider, '连接成功：' + (d.detail || 'ok'), 'ok'); }
+        else { show(provider, '连接未通过：' + (d.detail || '未知原因') + (d.code ? '（' + d.code + '）' : ''), 'err'); }
+      } catch (e) {
+        show(provider, '连接未通过：网络或服务异常', 'err');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  });
+})();
+</script>
+{% endblock %}

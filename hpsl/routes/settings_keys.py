@@ -24,8 +24,13 @@ from ..common.result import ok
 from ..models import connectivity, registry
 from ..secrets.keystore import FileBackend
 from .security import write_security, read_security
+from ..templating import make_templates
 
 api_router = APIRouter(prefix="/api/v1")
+page_router = APIRouter()
+
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+_TEMPLATES = make_templates(str(_TEMPLATES_DIR))
 
 # 密钥存储目录：HPSL_HOME/secrets（D-M11-1，避免污染源码包目录）。
 # 注意：HPSL_HOME 在测试中被 autouse fixture 按测试重写为临时目录，故**不可**在模块
@@ -102,3 +107,32 @@ async def test_provider_api(name: str):
     _validate_provider(name)
     result = connectivity.test_connection(name, secrets_dir=_secrets_dir())
     return ok(result)
+
+
+# ---------------------------------------------------------------------------
+# 页面：独立的密钥管理入口（M38）
+# ---------------------------------------------------------------------------
+@page_router.get("/keys", dependencies=[Depends(read_security)])
+def keys_page(req: Request):
+    """密钥管理页：不需要先有项目——密钥是全局的，换了项目也要能改。
+
+    只暴露 has_key / stored_in / key_tail（D1 §6.5）；锁定状态下禁用手填，
+    并把原因原样告诉用户（而不是等提交后弹一个 A040003）。
+    """
+    state = secrets_mod.lock_state(_secrets_dir())
+    items = []
+    for provider in registry.list_providers():
+        st = secrets_mod.key_status(provider, backend=_backend())
+        st["display"] = registry.provider_display(provider)
+        items.append(st)
+    return _TEMPLATES.TemplateResponse(
+        request=req,
+        name="keys.html",
+        context={
+            "providers": items,
+            "locked": state["locked"],
+            "lock_reason": state["reason"],
+            "stored_in": state["stored_in"],
+            "secrets_dir": str(_secrets_dir()),
+        },
+    )

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.templating import Jinja2Templates
+from ..templating import make_templates
 
 from .. import db, projects as proj
 from ..common.errors import BizError
@@ -38,7 +38,7 @@ api_router = APIRouter(prefix="/api/v1")
 page_router = APIRouter()
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
-_TEMPLATES = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+_TEMPLATES = make_templates(str(_TEMPLATES_DIR))
 
 # 批量裁决允许的状态（「验证中」等流程态不在此列；复用既有 gap.status 枚举字面量）
 _ALLOWED_GAP_STATUSES = ("已补", "已验证", "废弃")

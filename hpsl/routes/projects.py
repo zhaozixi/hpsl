@@ -14,7 +14,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from ..templating import make_templates
 
 from .. import db, projects as proj, config as _config
 from ..common.dto import ProjectCreateRequest, ProjectVO, ConfigVO
@@ -23,7 +23,7 @@ from ..common.result import ok, fail
 from .security import write_security, read_security
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
-_TEMPLATES = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+_TEMPLATES = make_templates(str(_TEMPLATES_DIR))
 
 api_router = APIRouter(prefix="/api/v1")
 page_router = APIRouter()
@@ -185,6 +185,7 @@ def detail_page(req: Request, pid: str):
             "project": vo.to_dict(),
             "config": cfg.to_dict(),
             "is_active": bool(active and active.id == pid),
+            "usd_rate": cfg.usd_cny_rate,
         },
     )
 
@@ -203,5 +204,5 @@ def settings_page(req: Request):
     return _TEMPLATES.TemplateResponse(
         request=req,
         name="settings.html",
-        context={"project": active.to_dict(), "config": cfg.to_dict()},
+        context={"project": active.to_dict(), "config": cfg.to_dict(), "usd_rate": cfg.usd_cny_rate},
     )

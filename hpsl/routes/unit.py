@@ -26,7 +26,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from ..templating import make_templates
 
 from .. import db, projects as proj
 from ..engine import state as st
@@ -43,7 +43,7 @@ api_router = APIRouter(prefix="/api/v1")
 page_router = APIRouter()
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
-_TEMPLATES = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+_TEMPLATES = make_templates(str(_TEMPLATES_DIR))
 
 
 # ---------------------------------------------------------------------------

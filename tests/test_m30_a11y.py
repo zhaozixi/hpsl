@@ -112,7 +112,7 @@ def test_budget_table_headers_have_scope(client, csrf_headers):
     r = client.get("/budget")
     assert r.status_code == 200
     assert 'id="budget-table"' in r.text
-    for head in ["会话", "累计(USD)", "上限", "状态", "确认次数"]:
+    for head in ["会话", "累计（美元 / 人民币）", "上限（美元 / 人民币）", "状态", "确认次数"]:
         assert f'<th scope="col">{head}</th>' in r.text
 
 

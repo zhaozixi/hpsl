@@ -53,7 +53,8 @@
   <div class="card">
     <h3>累计花费</h3>
     <p class="text-muted">LLM 调用成本</p>
-    <p style="font-size:var(--fs-xl); font-weight:700;">{{ "%.4f"|format(stats.cost_total) }}</p>
+    <p style="font-size:var(--fs-xl); font-weight:700;">{{ stats.cost_total|usd }}</p>
+    <p class="text-muted"><small>≈ {{ stats.cost_total|cny(usd_rate) }}</small></p>
   </div>
 
   <div class="card">
@@ -73,17 +74,17 @@
 </div>
 <div class="card">
   {% if stats.cost_max > 0 %}
-  <svg width="100%" viewBox="0 0 600 160" preserveAspectRatio="none" role="img" aria-label="近 {{ days }} 天每日 LLM 花费柱状图，峰值 {{ '%.4f'|format(stats.cost_max) }}" style="border:1px solid var(--border); background:var(--surface-2); border-radius:var(--r-md);">
+  <svg width="100%" viewBox="0 0 600 160" preserveAspectRatio="none" role="img" aria-label="近 {{ days }} 天每日 LLM 花费柱状图，峰值 {{ stats.cost_max|both(usd_rate) }}" style="border:1px solid var(--border); background:var(--surface-2); border-radius:var(--r-md);">
     <line x1="0" y1="140" x2="600" y2="140" stroke="var(--border-strong)" stroke-width="1"></line>
     {% set bw = 600 / stats.cost_series|length %}
     {% for s in stats.cost_series %}
       {% set h = (s.cost / stats.cost_max * 120) if stats.cost_max > 0 else 0 %}
       <rect x="{{ loop.index0 * bw }}" y="{{ 140 - h }}" width="{{ bw - 1 }}" height="{{ h }}" fill="#2563eb" opacity="0.85">
-        <title>{{ s.date }}：{{ "%.4f"|format(s.cost) }}</title>
+        <title>{{ s.date }}：{{ s.cost|both(usd_rate) }}</title>
       </rect>
     {% endfor %}
   </svg>
-  <p class="text-muted">每日 LLM 花费合计（货币单位随记账）；峰值 {{ "%.4f"|format(stats.cost_max) }}。</p>
+  <p class="text-muted">每日 LLM 花费合计（记账按美元，人民币按 {{ usd_rate|rate }} 折算）；峰值 {{ stats.cost_max|both(usd_rate) }}。</p>
   {% else %}
   <p class="ok">近 {{ days }} 天暂无花费记录。</p>
   {% endif %}
