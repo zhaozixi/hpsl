@@ -68,6 +68,43 @@
     </p>
   </section>
 
+  <section>
+    <h2>角色用哪个模型</h2>
+    <p class="text-muted"><small>默认「自动选择」：用你配了密钥的厂商里的第一个模型。想让某个角色用特定模型（比如挑错者用更强的、书记员用便宜的），在这里指定。指定的厂商没密钥时，该角色会直接报错而不是偷偷换模型——避免你在不知情的情况下花到别家账上。</small></p>
+    <table class="table">
+      <thead>
+        <tr><th scope="col">角色</th><th scope="col">指定模型</th><th scope="col">实际会用什么</th></tr>
+      </thead>
+      <tbody>
+        {% for r in role_rows %}
+        <tr>
+          <td>{{ r.label }}</td>
+          <td>
+            <select class="select" data-role-model="{{ r.role }}" aria-label="{{ r.label }}使用的模型">
+              <option value="">自动选择</option>
+              {% for g in model_groups %}
+              <optgroup label="{{ g.display }}{{ '' if g.has_key else '（未配置密钥）' }}">
+                {% for m in g.models %}
+                <option value="{{ m.id }}"{% if r.requested == m.id %} selected{% endif %}>{{ m.id }}</option>
+                {% endfor %}
+              </optgroup>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            {% if r.error %}
+              <span class="result err">{{ r.error }}</span>
+            {% else %}
+              <code>{{ r.effective }}</code>{% if r.source == 'auto' %} <small class="text-muted">（自动）</small>{% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="text-muted"><small>改了要一起点下面的「保存设置」。也可以只改模型、不动上面的阈值。</small></p>
+  </section>
+
   <p>
     <button type="submit" class="btn btn-primary">保存设置</button>
     <span id="save-status" role="status" aria-live="polite"></span>
@@ -117,6 +154,16 @@ function saveSettings(e) {
     body.review_intervals = ri.split(',').map(function (s) { return s.trim(); })
       .filter(function (s) { return s.length; })
       .map(function (s) { return parseInt(s, 10); });
+  }
+  // 角色→模型：整体提交当前六角色的快照（空值 = 走自动选择）。
+  // 不提交就等于"没改"，这也正是页面上 select 已回填当前值的原因。
+  var roleSel = document.querySelectorAll('[data-role-model]');
+  if (roleSel.length) {
+    var rm = {};
+    Array.prototype.forEach.call(roleSel, function (s) {
+      if (s.value) { rm[s.getAttribute('data-role-model')] = s.value; }
+    });
+    body.role_models = rm;
   }
   var status = document.getElementById('save-status');
   status.textContent = '保存中…';

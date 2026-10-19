@@ -2,6 +2,7 @@
 
 - `GET  /settings/keys`：列出已知 Provider 密钥状态（仅 has_key / stored_in / key_tail）。
 - `PUT  /settings/keys/{provider}`：写入 provider 密钥（落 HPSL_HOME/secrets 文件保险库）。
+- `DELETE /settings/keys/{provider}`：清除某厂商密钥（M39；幂等，锁定态亦可用）。
 - `POST /providers/{name}/test`：测试连接（connectivity.test_connection）。
 
 纪律约束（M11 批次1 实现规格 §1 / §5 / D-M11-1）：
@@ -97,6 +98,28 @@ async def set_key_api(provider: str, req: Request):
         raise BizError("C400001", msg="缺少密钥（key 字段，非空字符串）")
     secrets_mod.set_api_key(provider, key.strip(), backend=_backend())
     return ok(secrets_mod.key_status(provider, backend=_backend()))
+
+
+# ---------------------------------------------------------------------------
+# REST：删除密钥（M39）
+# ---------------------------------------------------------------------------
+@api_router.delete("/settings/keys/{provider}", dependencies=[Depends(write_security)])
+def delete_key_api(provider: str):
+    """清除某厂商密钥（幂等）。
+
+    - 不受密钥库锁定影响：删除只需 unlink，不需要口令解密；
+    - 遍历 keyring 与文件保险库，避免"钥匙串删了、文件还留一份"；
+    - 本来就没有 → 仍返回 200，`removed=False`，前端据此显示"本来就没配置"。
+    """
+    _validate_provider(provider)
+    removed = secrets_mod.delete_api_key(provider, secrets_dir=_secrets_dir())
+    return ok(
+        {
+            "provider": provider,
+            "removed": removed,
+            "status": secrets_mod.key_status(provider, backend=_backend()),
+        }
+    )
 
 
 # ---------------------------------------------------------------------------

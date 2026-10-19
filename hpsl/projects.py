@@ -24,12 +24,16 @@ from typing import Optional
 from . import config as _config
 from . import db as _db
 from .common.dto import ProjectCreateRequest, ProjectVO, ConfigVO
+from .common.enums import Role
 from .common.errors import BizError
 
 # 校验边界（规格 §9.2 / §9.3）
 NAME_MIN, NAME_MAX = 1, 100
 GOAL_MIN, GOAL_MAX = 1, 500
 BELIEF_MAX = 2000
+
+# M39：可显式指定模型的角色（user 是学习者本人，不对应模型）
+_CONFIGURABLE_ROLES = frozenset(r.value for r in Role if r is not Role.USER)
 
 _DIR_MODE = 0o700
 _SUBDIRS = ("backups", "exports", "logs")
@@ -280,10 +284,40 @@ def update_initial_belief(pid: str, belief: Optional[str], actor: str = "user") 
     )
 
 
+def _normalize_role_models(raw) -> dict:
+    """归一化 `role_models`：只保留六角色的非空映射，空值视为「走自动选择」。
+
+    结构性错误一律 C400001（参数问题），不静默丢弃——写错角色名却毫无提示，
+    用户会以为配置生效了。
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise BizError("C400001", msg='role_models 须为对象，形如 {"critic": "deepseek-v4-pro"}')
+    out: dict = {}
+    for role, model_id in raw.items():
+        if role not in _CONFIGURABLE_ROLES:
+            raise BizError(
+                "C400001",
+                msg=f"未知角色：{role}（可用：{', '.join(sorted(_CONFIGURABLE_ROLES))}）",
+            )
+        if model_id is None or (isinstance(model_id, str) and not model_id.strip()):
+            continue  # 空值 = 删除该键 = 该角色走自动选择
+        if not isinstance(model_id, str):
+            raise BizError("C400001", msg=f"角色 {role} 的模型 ID 须为字符串")
+        out[role] = model_id.strip()
+    return out
+
+
 def set_config(pid: str, patch: dict, actor: str = "user") -> ConfigVO:
     """项目级阈值覆盖写入（经 db.write 审计）。返回合并后的 ConfigVO。"""
     row = _read_project_row(pid)
-    merged = {**row["config"], **(patch or {})}
+    patch = dict(patch or {})
+    if "role_models" in patch:
+        # 整体替换语义：前端总是提交完整的六角色快照（空值被剔除），
+        # 这样「把某角色改回自动」只需提交时不含该键。
+        patch["role_models"] = _normalize_role_models(patch["role_models"])
+    merged = {**row["config"], **patch}
     _db.write(
         pid,
         "project",

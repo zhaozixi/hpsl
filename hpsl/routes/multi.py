@@ -77,10 +77,12 @@ def _unit(pid: str, uid: str) -> dict:
     return rows[0]
 
 
-def _model_ids(raw, default_role: str) -> list[str]:
-    """解析 model_ids：缺省取该角色默认模型；显式提供须为非空字符串数组。"""
+def _model_ids(raw, default_role: str, pid: str) -> list[str]:
+    """解析 model_ids：缺省取该角色**实际生效**的模型；显式提供须为非空字符串数组。"""
     if raw is None:
-        return [registry.pick_default_model(default_role)]
+        # M39：未显式给 model_ids 时，跟随项目里「角色→模型」配置（而不是硬编码自动选择）
+        cfg = proj.get_effective_config(pid)
+        return [registry.resolve_role_model(default_role, cfg.role_models)]
     if isinstance(raw, str):
         raw = [raw]
     if not isinstance(raw, list) or not raw:
@@ -103,16 +105,39 @@ def _ensure_registered(model_ids: list[str]) -> None:
             raise BizError("A040003", msg=f"模型不可用：{m!r}（未在 models.yaml 注册或缺少密钥）")
 
 
-def _auto_model_ids(limit: int = 3) -> list[str]:
-    """自动三模型：按 provider 去重，取每家首个已注册模型（最多 `limit` 家）。
+def _ensure_keys(model_ids: list[str]) -> None:
+    """预检：清单里每个模型所属厂商都必须有可用密钥（M39）。
 
-    顺序以 models.yaml 为准（当前 deepseek / qwen / zhipu）。只做注册表编排，
-    不预检密钥：适配器缺密钥时仍按其既有错误码（A040003）失败。
+    在创建 session **之前**执行。此前自动交叉验证不做预检，某家没配密钥时会出现
+    「会话已建、前面几家已经计费、最后一个才失败」的半截结果——用户花了钱却拿不到
+    完整答案。这里一次性挡在门口，失败时不产生任何会话与费用。
+    """
+    missing: list[str] = []
+    for m in model_ids:
+        cfg = registry.get_model(m)  # 已由 _ensure_registered 保证存在
+        if not registry.provider_has_key(cfg.provider):
+            missing.append(f"{cfg.id}（{registry.provider_display(cfg.provider)}）")
+    if missing:
+        raise BizError(
+            "A040003",
+            msg="以下模型所属厂商没有可用密钥："
+            + "、".join(missing)
+            + "。请到「密钥」页填写后再试（本次未创建会话、未产生费用）",
+        )
+
+
+def _auto_model_ids(limit: int = 3) -> list[str]:
+    """自动三模型：按 provider 去重，取每家首个**已配密钥**的已注册模型（最多 `limit` 家）。
+
+    顺序以 models.yaml 为准（当前 deepseek / qwen / zhipu）。只挑有密钥的厂商，
+    避免把注定失败的模型放进清单（剩余不足 2 家由调用方报错）。
     """
     seen: set[str] = set()
     model_ids: list[str] = []
     for cfg in registry.list_models():
         if cfg.provider in seen:
+            continue
+        if not registry.provider_has_key(cfg.provider):
             continue
         seen.add(cfg.provider)
         model_ids.append(cfg.id)
@@ -162,7 +187,7 @@ async def critic_multi_api(req: Request, uid: str):
     claim = body.get("claim")
     if not isinstance(claim, str) or not claim.strip():
         raise BizError("C400001", msg="claim 必填")
-    model_ids = _model_ids(body.get("model_ids"), "critic")
+    model_ids = _model_ids(body.get("model_ids"), "critic", pid)
     _ensure_registered(model_ids)
     answer_model_id = body.get("answer_model_id") or None
     if answer_model_id is not None:
@@ -209,8 +234,9 @@ def _cross_check_impl(
     if not isinstance(model_ids, list) or not model_ids:
         raise BizError("C400001", msg="model_ids 须为非空字符串数组")
 
-    # 先解析模型清单（未知模型在创建 session / 记费之前失败，避免孤立会话与半截记账）
+    # 先解析模型清单（未知模型 / 缺密钥在创建 session 与计费之前失败，避免孤立会话与半截记账）
     _ensure_registered(model_ids)
+    _ensure_keys(model_ids)
 
     if session_id and not db.query(pid, "SELECT id FROM session WHERE id=?", (session_id,)):
         raise BizError("C400001", msg="session_id 不存在")
@@ -271,7 +297,7 @@ async def cross_check_api(req: Request, uid: str):
     if not isinstance(question, str) or not question.strip():
         raise BizError("C400001", msg="question 必填")
 
-    model_ids = _model_ids(body.get("model_ids"), "answer_machine")
+    model_ids = _model_ids(body.get("model_ids"), "answer_machine", pid)
     session_id = body.get("session_id") or None
     topic = body.get("topic")
     return ok(
@@ -289,9 +315,11 @@ async def cross_check_auto_api(req: Request, uid: str):
 
     请求体：`{question, session_id?}`
     响应：`{answers: [...], session_id, models: [model_id, ...]}`
-    不足 2 家 provider → C400001（无法构成交叉验证）。不做密钥预检。
+    只挑**已配密钥**的厂商；不足 2 家 → C400001（无法构成交叉验证），
+    并在提示里说清「配了几家」，而不是让人去翻 models.yaml（M39）。
     """
     pid = _require_pid()
+    _unit(pid, uid)  # 与显式 model_ids 端点同序：单元不存在先于请求体与密钥校验
     body = await _parse_body(req)
     question = body.get("question")
     if not isinstance(question, str) or not question.strip():
@@ -299,9 +327,16 @@ async def cross_check_auto_api(req: Request, uid: str):
 
     model_ids = _auto_model_ids(limit=3)
     if len(model_ids) < 2:
+        if not model_ids:
+            raise BizError(
+                "C400001",
+                msg="自动交叉验证需要至少 2 家已配密钥的厂商，当前一家都没有；"
+                "请先到「密钥」页填写（本次未创建会话、未产生费用）",
+            )
         raise BizError(
             "C400001",
-            msg="自动交叉验证至少需要 2 家已注册厂商（当前不足，请检查 models.yaml）",
+            msg=f"自动交叉验证至少需要 2 家已配密钥的厂商，当前只有 {len(model_ids)} 家"
+            f"（{model_ids[0]}）；请到「密钥」页再配一家（本次未创建会话、未产生费用）",
         )
 
     session_id = body.get("session_id") or None

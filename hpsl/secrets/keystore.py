@@ -133,6 +133,9 @@ class KeyBackend(Protocol):
     def get(self, provider: str) -> Optional[str]: ...
     def set(self, provider: str, key: str) -> None: ...
     def location(self) -> str: ...
+    # M39：删除能力（可选实现）。协议层声明为可选语义：调用方须用 getattr 探测，
+    # 不可假定旧后端一定具备——第三方注入的 backend 可能只有 get/set。
+    def delete(self, provider: str) -> bool: ...
 
 
 class MemoryBackend:
@@ -146,6 +149,10 @@ class MemoryBackend:
 
     def set(self, provider: str, key: str) -> None:
         self._store[provider] = key
+
+    def delete(self, provider: str) -> bool:
+        """删除该 provider 的密钥；原本不存在 → 返回 False（幂等）。"""
+        return self._store.pop(provider, None) is not None
 
     def location(self) -> str:
         return "memory"
@@ -221,6 +228,21 @@ class FileBackend:
         except OSError:
             pass  # 某些平台 chmod 不可达，不阻断
 
+    def delete(self, provider: str) -> bool:
+        """删除密钥文件。
+
+        刻意**不**做解密：删除只需要 unlink，因此密钥库锁定时也能删——否则用户
+        填错一把密钥后，在锁定环境下将永远无法撤销它。
+        """
+        p = self._path(provider)
+        try:
+            p.unlink()
+            return True
+        except FileNotFoundError:
+            return False
+        except OSError as exc:  # 权限问题等：明确报错，不假装成功
+            raise BizError("A040003", msg=f"密钥文件删除失败：{exc}")
+
     def location(self) -> str:
         return "fernet_file"
 
@@ -240,6 +262,14 @@ def _try_keyring_backend() -> Optional[KeyBackend]:
 
         def set(self, provider: str, key: str) -> None:
             keyring.set_password("hpsl", provider, key)
+
+        def delete(self, provider: str) -> bool:
+            try:
+                keyring.delete_password("hpsl", provider)
+                return True
+            except Exception:
+                # 不存在 / 后端不支持删除：按「没删到」处理，由调用方汇总结果
+                return False
 
         def location(self) -> str:
             return "keyring"
@@ -325,6 +355,37 @@ def set_api_key(
         kr.set(provider, key)
         return
     FileBackend(secrets_dir or _default_secrets_dir()).set(provider, key)
+
+
+def delete_api_key(
+    provider: str,
+    *,
+    backend: Optional[KeyBackend] = None,
+    secrets_dir: Optional[str | Path] = None,
+) -> bool:
+    """清除 provider 密钥；返回是否真的删掉了东西（幂等，重复删不报错）。
+
+    - 显式 `backend` → 只删该后端；
+    - 否则遍历默认后端（keyring + 文件保险库）全部清理，避免"钥匙串删了、
+      文件里还留一份"的半删除状态；
+    - **不受密钥库锁定影响**：删除只需 unlink，不需要口令解密。锁定态下仍可撤销密钥。
+    """
+    if backend is not None:
+        fn = getattr(backend, "delete", None)
+        return bool(fn(provider)) if callable(fn) else False
+    removed = False
+    for b in _default_backends(secrets_dir):
+        fn = getattr(b, "delete", None)
+        if not callable(fn):
+            continue  # 只有 get/set 的旧后端：跳过，不假装成功
+        try:
+            if fn(provider):
+                removed = True
+        except BizError:
+            raise
+        except Exception:
+            continue
+    return removed
 
 
 def key_status(

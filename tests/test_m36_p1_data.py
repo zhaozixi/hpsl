@@ -147,7 +147,9 @@ def test_restore_endpoint_htmx_fragment_and_refresh(client, csrf_headers):
     headers["HX-Request"] = "true"
     r = client.post(f"/api/v1/backup/{name}/restore", headers=headers)
     assert r.status_code == 200, r.text
-    assert r.headers.get("HX-Refresh") == "true"
+    # M39 起不再整页刷新：结果片段 + OOB 同步列表与计数，否则「已恢复」提示会被立刻冲掉
+    assert r.headers.get("HX-Refresh") is None
+    assert 'id="backup-list"' in r.text and 'hx-swap-oob="true"' in r.text
     assert "已从快照恢复" in r.text and name in r.text
     assert db.query(pid, "SELECT name FROM concept WHERE id='c1'")[0]["name"] == "v1"
     pre = list((cfg.project_dir(pid) / "backups").glob("pre-restore-*.db"))

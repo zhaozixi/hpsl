@@ -60,6 +60,10 @@ def fake_adapters(monkeypatch):
         return made[model_id]
 
     monkeypatch.setattr(model_registry, "build_adapter", _build)
+    # M39 起交叉验证会预检密钥；本组用例全部用假适配器，不发网络请求，
+    # 因此把"厂商有密钥"固定为真，把被测点留在编排与记账逻辑上。
+    # 预检本身由 test_m39 单独覆盖（含真实被拦下的路径）。
+    monkeypatch.setattr(model_registry, "provider_has_key", lambda provider: True)
     return made
 
 

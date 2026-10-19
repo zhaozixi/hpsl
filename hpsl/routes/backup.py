@@ -4,7 +4,11 @@
 - GET /api/v1/projects/{pid}/backups：列出该项目 backups/ 目录下的快照文件（REST）。
 - POST /api/v1/backup/{name}/restore：从当前项目快照恢复 project.db（write_security；
   仅接受 basename 且必须命中 db.list_backups 白名单，委托 db.restore_project）。
+- DELETE /api/v1/backup/{name}：删除单份快照（M39；同样走 basename + 白名单校验）。
 - 实际导出由 M1 既有 `POST /api/v1/projects/{pid}/backup`（projects.py）委托 db.backup_project 完成。
+
+自动轮转已在 db.backup_project → rotate_backups 内（日 7 + 月 12），本模块的删除只解决
+「想立刻删掉某一份」的手动场景，不承担容量控制。
 
 纪律约束：零 DDL（仅向项目目录外部写文件，不触库内对象）；读接口 read_security；
 导出/恢复写接口 write_security（导出在 projects.py 已落实）；本批次不改 engine；无新错误码。
@@ -12,11 +16,9 @@
 
 from __future__ import annotations
 
-import html
 from pathlib import Path
 
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse
 from ..templating import make_templates
 
 from .. import db, projects as proj, config as cfg
@@ -94,7 +96,8 @@ def restore_backup_api(req: Request, name: str):
 
     - 校验 name 为 basename 且命中 `db.list_backups(pid)`；
     - 委托 `db.restore_project`（完整性校验 → pre-restore 留底 → 覆盖 → 复检）；
-    - HTMX：返回结果片段 + HX-Refresh 整页刷新（恢复后页面数据整体变化）；
+    - HTMX：返回结果片段 + OOB 同步刷新列表与计数（M39 起不再 HX-Refresh ——
+      整页刷新会把「已恢复」提示立刻冲掉，用户看不到自己刚做了什么）；
       非 HTMX：返回统一 Result（data 含恢复来源与留底路径）。
     """
     pid = _active_pid()
@@ -102,9 +105,11 @@ def restore_backup_api(req: Request, name: str):
     info = db.restore_project(pid, safe_name)
     pre_restore = Path(info["pre_restore"]).name
     if req.headers.get("hx-request") is not None:
-        # 文件名来自受控白名单，仍做 HTML 转义（文件名可能含特殊字符）
-        msg = html.escape(f"已从快照恢复：{safe_name}（恢复前数据已留底：{pre_restore}）")
-        return HTMLResponse(f"<p class='ok'>{msg}</p>", headers={"HX-Refresh": "true"})
+        return _backup_action_response(
+            req,
+            pid,
+            f"已从快照恢复：{safe_name}（恢复前数据已留底：{pre_restore}）",
+        )
     return ok(
         {
             "pid": pid,
@@ -113,4 +118,36 @@ def restore_backup_api(req: Request, name: str):
             "pre_restore": info["pre_restore"],
             "objects": info["objects"],
         }
+    )
+
+
+@api_router.delete("/backup/{name}", dependencies=[Depends(write_security)])
+def delete_backup_api(req: Request, name: str):
+    """删除当前项目的某份快照文件（M39）。
+
+    安全边界与恢复一致：仅接受 basename，且必须命中 `db.list_backups` 白名单
+    （白名单本身来自目录扫描，天然排除 `project.db` 与目录外文件）。
+    幂等：文件已不存在 → C400001（明确告知，而不是假装删成功）。
+    """
+    pid = _active_pid()
+    safe_name = _validate_backup_name(pid, name)
+    target = cfg.project_dir(pid) / "backups" / safe_name
+    try:
+        target.unlink()
+    except FileNotFoundError:
+        raise BizError("C400001", msg=f"备份文件不存在：{safe_name}")
+    except OSError as exc:  # 占用 / 权限等：如实报错，不吞
+        raise BizError("B999001", msg=f"删除备份失败：{exc}") from exc
+
+    if req.headers.get("hx-request") is not None:
+        return _backup_action_response(req, pid, f"已删除快照：{safe_name}")
+    return ok({"pid": pid, "deleted": safe_name})
+
+
+def _backup_action_response(req: Request, pid: str, message: str, cls: str = "ok"):
+    """备份页动作（恢复 / 删除）的统一 HTMX 响应：结果片段 + OOB 列表与计数。"""
+    return _TEMPLATES.TemplateResponse(
+        request=req,
+        name="_backup_action.html",
+        context={"message": message, "cls": cls, "backups": _list_backups(pid)},
     )

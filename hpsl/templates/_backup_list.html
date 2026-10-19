@@ -3,10 +3,14 @@
   {% for b in backups %}
   <li class="backup-row">
     <span class="backup-name">{{ b }}</span>
-    <button type="button" class="btn btn-small"
+    <button type="button" class="btn btn-sm"
             hx-post="/api/v1/backup/{{ b|urlencode }}/restore"
             hx-target="#backup-result" hx-swap="innerHTML"
             hx-confirm="确定用这份快照覆盖当前数据吗？恢复前会自动留底一份当前库。">恢复</button>
+    <button type="button" class="btn btn-sm btn-danger"
+            hx-delete="/api/v1/backup/{{ b|urlencode }}"
+            hx-target="#backup-result" hx-swap="innerHTML"
+            hx-confirm="确定删除这份快照吗？文件会被直接删除，无法找回。">删除</button>
   </li>
   {% endfor %}
 </ul>

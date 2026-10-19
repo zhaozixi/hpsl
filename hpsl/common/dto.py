@@ -59,13 +59,16 @@ class ConfigVO:
     budget_cap_usd: float = 10.0
     # M38：费用展示用的人民币汇率（1 USD = ? CNY）。只影响界面折算，不改记账口径。
     usd_cny_rate: float = 7.2
+    # M39：角色 → 模型 ID 的显式映射（空 dict = 全部走自动选择）。
+    # 存于 project.config JSON，零 DDL；某角色缺键即回落 pick_default_model。
+    role_models: dict = field(default_factory=dict)
     extra: dict = field(default_factory=dict)
 
     # ConfigVO 已知字段（用于从 project.config JSON 合并时只读取这些键）
     KNOWN_FIELDS = (
         "pass_threshold", "pass_hi", "pass_lo", "l1_gap_limit", "session_minutes",
         "zero_gap_max", "forced_close_max", "skipped_produce_max",
-        "review_intervals", "budget_cap_usd", "usd_cny_rate", "extra",
+        "review_intervals", "budget_cap_usd", "usd_cny_rate", "role_models", "extra",
     )
 
     def to_dict(self) -> dict:

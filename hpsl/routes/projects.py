@@ -20,6 +20,7 @@ from .. import db, projects as proj, config as _config
 from ..common.dto import ProjectCreateRequest, ProjectVO, ConfigVO
 from ..common.errors import BizError
 from ..common.result import ok, fail
+from ..models import registry
 from .security import write_security, read_security
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -126,6 +127,18 @@ def get_config_api(pid: str):
 async def set_config_api(pid: str, req: Request):
     vo = _require_project(pid)
     data = await _parse_body(req)
+    # M39：显式指定的模型必须已注册；未注册 → C400001（参数错误，不是"密钥不可用"）
+    if isinstance(data, dict) and isinstance(data.get("role_models"), dict):
+        for role, model_id in data["role_models"].items():
+            if not isinstance(model_id, str) or not model_id.strip():
+                continue
+            try:
+                registry.get_model(model_id.strip())
+            except KeyError:
+                raise BizError(
+                    "C400001",
+                    msg=f"角色 {role} 指定的模型未注册：{model_id}（检查 models.yaml 或改回自动选择）",
+                )
     cfg = proj.set_config(pid, data or {}, actor="user")
     return ok(cfg.to_dict())
 
@@ -201,8 +214,28 @@ def settings_page(req: Request):
             context={"error": "尚未选择项目，请先在首页选择或新建项目"},
         )
     cfg = proj.get_effective_config(active.id)
+    # M39：角色→模型下拉的数据源（按厂商分组；标注该厂商是否已配密钥）
+    model_groups = []
+    for provider in registry.list_providers():
+        items = [c for c in registry.list_models() if c.provider == provider]
+        if not items:
+            continue
+        model_groups.append(
+            {
+                "provider": provider,
+                "display": registry.provider_display(provider),
+                "has_key": registry.provider_has_key(provider),
+                "models": items,
+            }
+        )
     return _TEMPLATES.TemplateResponse(
         request=req,
         name="settings.html",
-        context={"project": active.to_dict(), "config": cfg.to_dict(), "usd_rate": cfg.usd_cny_rate},
+        context={
+            "project": active.to_dict(),
+            "config": cfg.to_dict(),
+            "usd_rate": cfg.usd_cny_rate,
+            "role_rows": registry.describe_role_models(cfg.role_models),
+            "model_groups": model_groups,
+        },
     )

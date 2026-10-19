@@ -214,6 +214,104 @@ def build_adapter(model_id: str, *, key_resolver=None, base_url=None) -> Provide
     return REGISTRY.build_adapter(model_id, key_resolver=key_resolver, base_url=base_url)
 
 
+def _secrets_dir_path() -> Path:
+    """密钥目录（与 routes/settings_keys 一致：HPSL_HOME/secrets）。按调用时解析。"""
+    from .. import config as _config
+
+    return _config.home() / "secrets"
+
+
+def provider_has_key(provider: str) -> bool:
+    """该厂商当前是否有可用密钥（锁定态视为没有；异常一律按没有处理）。"""
+    from ..secrets import keystore
+
+    try:
+        return bool(keystore.key_status(provider, secrets_dir=_secrets_dir_path()).get("has_key"))
+    except Exception:
+        return False
+
+
+# 可显式指定模型的角色（user 是学习者本人，不对应任何模型）。
+# 与 common.enums.Role 保持一致；此处用字面量避免 models 层反向依赖业务枚举文件。
+CONFIGURABLE_ROLES: tuple[str, ...] = (
+    "answer_machine",
+    "questioner",
+    "boundary_setter",
+    "critic",
+    "clerk",
+    "topic_picker",
+)
+
+_ROLE_LABELS: dict[str, str] = {
+    "answer_machine": "答案机",
+    "questioner": "提问者",
+    "boundary_setter": "出题者",
+    "critic": "挑错者",
+    "clerk": "书记员",
+    "topic_picker": "选题助手",
+}
+
+
+def resolve_role_model(role: str, role_models: Optional[dict] = None) -> str:
+    """解析某角色**实际**会用的模型（M39）。
+
+    优先级：项目配置 `role_models[role]` → 自动选择（`pick_default_model`）。
+
+    与 `pick_default_model` 的差异：显式配置**不允许静默降级**。如果指定的模型未注册、
+    或它的厂商没有密钥，直接抛 A040003 并给出两条出路（去填密钥 / 改回自动），
+    而不是悄悄换成别家的模型——那会让用户在不知情的情况下换模型、换价格。
+    """
+    from ..common.errors import BizError
+
+    requested = None
+    if isinstance(role_models, dict):
+        requested = role_models.get(role)
+    if not requested:
+        return pick_default_model(role)
+    try:
+        cfg = REGISTRY.get_model(str(requested))
+    except KeyError:
+        raise BizError(
+            "A040003",
+            msg=f"角色「{_ROLE_LABELS.get(role, role)}」指定的模型不可用：{requested}"
+            "（未在 models.yaml 注册或已下线），请到「设置」把它改回自动选择",
+        )
+    if not provider_has_key(cfg.provider):
+        raise BizError(
+            "A040003",
+            msg=f"角色「{_ROLE_LABELS.get(role, role)}」指定用 {cfg.id}，但厂商"
+            f"「{REGISTRY.provider_display(cfg.provider)}」没有可用密钥；"
+            "请到「密钥」页填写，或到「设置」把该角色改回自动选择",
+        )
+    return cfg.id
+
+
+def describe_role_models(role_models: Optional[dict] = None) -> list[dict]:
+    """设置页展示用：每个角色「配了什么 / 实际用什么 / 为什么用不了」。
+
+    只读、不抛异常——配置坏了也要能在页面上看见原因，而不是整页 500。
+    """
+    from ..common.errors import BizError
+
+    out: list[dict] = []
+    for role in CONFIGURABLE_ROLES:
+        requested = (role_models or {}).get(role) if isinstance(role_models, dict) else None
+        item = {
+            "role": role,
+            "label": _ROLE_LABELS.get(role, role),
+            "requested": requested or "",
+            "effective": "",
+            "source": "explicit" if requested else "auto",
+            "error": "",
+        }
+        try:
+            item["effective"] = resolve_role_model(role, role_models)
+        except BizError as exc:
+            item["error"] = exc.msg
+        out.append(item)
+    return out
+
+
 def pick_default_model(role: Optional[str] = None) -> str:
     """选择角色的默认模型（P0 主链接线用，零配置可跑）。
 
@@ -223,12 +321,12 @@ def pick_default_model(role: Optional[str] = None) -> str:
     3. 跳过 gemini（当前 `GeminiAdapter` 为占位，调用即 A040002）。
 
     无可用密钥 → A040003（与 keystore 同一语义），错误文案指出下一步动作。
-    说明：F8.2「自动分配各角色」尚未实现，本函数即该能力的临时替代；不新增配置文件。
+    说明：未在项目配置里显式指定角色模型时，本函数即"自动选择"的实现；
+    显式指定走 `resolve_role_model`。
     """
     import os
 
     from ..common.errors import BizError
-    from ..secrets import keystore
 
     override = None
     if role:
@@ -238,15 +336,11 @@ def pick_default_model(role: Optional[str] = None) -> str:
         return override
 
     # 密钥目录与 routes/settings_keys 保持一致：HPSL_HOME/secrets（不在源码包内）
-    from .. import config as _config
-
-    secrets_dir = _config.home() / "secrets"
     REGISTRY._ensure()
     for provider in REGISTRY.list_providers():
         if REGISTRY.provider_kind(provider) == "gemini":
             continue
-        status = keystore.key_status(provider, secrets_dir=secrets_dir)
-        if not status.get("has_key"):
+        if not provider_has_key(provider):
             continue
         for cfg in REGISTRY.list_models():
             if cfg.provider == provider:

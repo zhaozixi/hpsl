@@ -1,7 +1,7 @@
 # HPSL 剩余开发清单（Roadmap）
 
-> 更新：2026-10-18（M36 REF-3 修复批之后）
-> 基线：M0–M36 已交付；全量 **692 passed / 3 skipped**
+> 更新：2026-10-19（M39 数据与配置能力补齐之后）
+> 基线：M0–M39 已交付；全量 **739 passed / 3 skipped**
 > P0 / P1 / P2（含 C9/C12）已清零；剩余仅浏览器 E2E、`pipx` 实测与真实凭据项。
 
 ---
@@ -49,7 +49,7 @@
 
 ## 3. 发布前检查清单
 
-1. `pytest -q` ≥ 692 passed（3 skipped 为无内联脚本的模板，属预期）；
+1. `pytest -q` ≥ 739 passed（3 skipped 为无内联脚本的模板，属预期）；
 2. `python .workbuddy/delivery/verify_baseline.py` → `BASELINE INTACT`；
 3. `python scripts/check_package.py` → `结果: PASS`（验证 wheel 打全了模板/静态/提示/YAML）；
 4. `python scripts/live_check.py --model deepseek-flash --role clerk --stream` → 退出码 0；
@@ -96,3 +96,29 @@
 | 详情页 | `<pre>{{ config }}</pre>` 开发态 dump → 9 行中文配置表 + 「查看原始配置（排障用）」折叠 |
 | 测试 | 新增 `tests/test_m35_restore_and_ux.py`（18 例）；`test_m24_web` 建单元用例改断局部刷新；`test_m32_providers` 改断 `detail` 承载上游原文 |
 | 验证 | **594 passed / 3 skipped**；BASELINE INTACT；浏览器复验 5/5 通过、13 页零 JS 错误 |
+
+---
+
+## 7. M38 变更摘要（2026-10-19，密钥入口与双币）
+
+| 类别 | 内容 |
+|---|---|
+| 独立密钥入口 | 新增 `/keys`（导航「设置」右侧），不依赖激活项目；厂商状态 / 保存 / 测试连接；锁定态解释原因并禁用保存；完整密钥永不进 HTML |
+| 双币展示 | 记账仍美元（`cost_usd` / `pricing.yaml` / 预算判断全不动），人民币按项目配置 `usd_cny_rate`（默认 7.2）只做展示折算；预算表、超限弹层、统计、项目详情、角色回执统一 `$x（约 ¥y）` |
+| 工程 | 新增 `common/money.py` 与 `templating.make_templates()`（注册 usd/cny/both/rate 过滤器），12 个路由模块统一走工厂 |
+| 验证 | 715 passed / 3 skipped；浏览器 9 项 PASS、0 console error、375px 无溢出 |
+
+---
+
+## 8. M39 变更摘要（2026-10-19，数据与配置能力）
+
+| 类别 | 内容 |
+|---|---|
+| 密钥清除 | `secrets.delete_api_key` + `DELETE /api/v1/settings/keys/{provider}`；**删除不解密**（锁定态也能撤销填错的密钥）；遍历 keyring + 文件两个后端；幂等 |
+| 快照删除 | `DELETE /api/v1/backup/{name}`，复用 basename + `db.list_backups` 白名单；每行加「删除」+ 二次确认 |
+| 恢复反馈 | 去掉 `HX-Refresh`，改结果片段 + OOB 列表/计数（提示不再被整页刷新冲掉） |
+| 角色绑定模型 | `ConfigVO.role_models`（JSON 键，零 DDL）+ `registry.resolve_role_model`；设置页六角色下拉 + 「实际会用什么」列；指定模型无密钥时**报错不静默降级** |
+| 交叉验证预检 | `multi.py::_ensure_keys` 在创建 session 前预检；自动模式只挑已配密钥的厂商；不足 2 家区分「0 家 / 只有 1 家」并写明未产生费用 |
+| 更正 | 「快照无限堆积」判断有误——`rotate_backups`（日 7 + 月 12）与 `cleanup_pre_restore`（留 3）一直存在；本批只补「手动删单份」 |
+| 验证 | 739 passed / 3 skipped（新增 24 例）；BASELINE INTACT；打包 PASS；浏览器 12 项 PASS、0 console error |
+| 未做 | 项目归档/删除、三问进度量、浏览器 E2E 进套件、导出双币（对账口径，有意不做） |

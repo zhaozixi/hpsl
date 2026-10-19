@@ -260,3 +260,12 @@ html.dark .site-nav a[aria-current="page"]{background:rgba(255,255,255,.18); col
 .modal-close:focus-visible{outline:3px solid var(--info-bd); outline-offset:2px;}
 html.dark .modal-close{color:var(--text-muted); background:transparent; border-color:var(--border-strong);}
 html.dark .modal-close:hover{background:var(--surface-2); color:var(--text);}
+
+/* M39：危险动作按钮（清除密钥 / 删除快照）。仅描边，不填色，避免变成页面上的主按钮。 */
+.btn-danger{color:var(--err); border-color:var(--err-bd); background:var(--surface);}
+.btn-danger:hover{background:var(--err-bg); color:var(--err);}
+.btn-danger:focus-visible{outline:3px solid var(--err-bd); outline-offset:2px;}
+html.dark .btn-danger{color:#fca5a5; border-color:#b91c1c; background:transparent;}
+html.dark .btn-danger:hover{background:rgba(185,28,28,.18); color:#fecaca;}
+/* `.btn` 显式声明了 display:inline-flex，会覆盖 hidden 属性的 UA 样式，这里补回 */
+.btn[hidden]{display:none;}

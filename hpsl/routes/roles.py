@@ -193,7 +193,9 @@ async def role_call_api(req: Request, role: str):
         raise BizError("C400001", msg="session_id 不存在")
 
     # 先解析模型与上下文（无密钥 / 单元不存在时，在创建 session 之前失败，避免孤立会话）
-    model_id = registry.pick_default_model(target.value)
+    # M39：角色→模型走项目配置映射；未显式指定的角色仍走自动选择。
+    cfg = proj.get_effective_config(pid)
+    model_id = registry.resolve_role_model(target.value, cfg.role_models)
     adapter = registry.build_adapter(model_id)
     ctx = _context(pid, target, unit_id, body)
 
@@ -217,7 +219,7 @@ async def role_call_api(req: Request, role: str):
         target, ctx, adapter=adapter, session_id=session_id, unit_id=unit_id
     )
     # M38：费用双币展示（美元记账 + 人民币折算），汇率取项目配置
-    rate = proj.get_effective_config(pid).usd_cny_rate
+    rate = cfg.usd_cny_rate
     try:
         provider = registry.get_model(reply.model).provider
     except KeyError:

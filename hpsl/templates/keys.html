@@ -44,6 +44,8 @@
       <button class="btn btn-primary" type="button" data-action="save-key"
               data-provider="{{ p.provider }}" {% if locked %}disabled{% endif %}>保存</button>
       <button class="btn" type="button" data-action="test-key" data-provider="{{ p.provider }}">测试连接</button>
+      <button class="btn btn-danger" type="button" data-action="delete-key"
+              data-provider="{{ p.provider }}" {% if not p.has_key %}hidden{% endif %}>清除密钥</button>
       <span class="result" role="status" aria-live="polite" data-role="result"></span>
     </p>
   </div>
@@ -76,6 +78,9 @@
     r.querySelector('[data-role="detail"]').textContent = st.has_key
       ? ('尾号 ' + st.key_tail + ' · 存放于' + where)
       : '还没有填过密钥';
+    // 「清除」只在有密钥时露出，避免点一个必然无效的按钮
+    var del = r.querySelector('[data-action="delete-key"]');
+    if (del) { del.hidden = !st.has_key; }
   }
 
   document.addEventListener('click', async function (evt) {
@@ -106,6 +111,32 @@
         }
       } catch (e) {
         show(provider, '保存失败：网络或服务异常', 'err');
+      } finally {
+        btn.disabled = false;
+      }
+      return;
+    }
+
+    if (btn.getAttribute('data-action') === 'delete-key') {
+      if (!window.confirm('确定清除这家厂商的密钥吗？清除后相关模型将无法调用，直到重新填写。')) { return; }
+      btn.disabled = true;
+      show(provider, '清除中…', '');
+      try {
+        var r3 = await fetch('/api/v1/settings/keys/' + encodeURIComponent(provider), {
+          method: 'DELETE',
+          headers: { 'X-CSRF-Token': csrf() }
+        });
+        var d3 = await r3.json();
+        if (d3.code === '0') {
+          refreshBadge(provider, d3.data.status);
+          var input3 = document.getElementById('key-' + provider);
+          if (input3) { input3.value = ''; }
+          show(provider, d3.data.removed ? '已清除（该厂商暂时不可用）' : '本来就没有配置密钥', 'ok');
+        } else {
+          show(provider, '清除失败：' + (d3.msg || d3.code), 'err');
+        }
+      } catch (e) {
+        show(provider, '清除失败：网络或服务异常', 'err');
       } finally {
         btn.disabled = false;
       }
