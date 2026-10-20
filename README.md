@@ -1,6 +1,6 @@
 # HPSL · 本地个人学习管家
 
-HPSL（项目制学习框架工具，Apache-2.0）是一个**本地运行的个人学习管家**：把学习目标拆成单元，按「学 → 练 → 考 → 复习」带流程推进，并记账（AI 花费）、记卡片、画概念图，用治理度量呈现学习进展。当前为 v0.1，已推进至 **M1–M36**。
+HPSL（项目制学习框架工具，Apache-2.0）是一个**本地运行的个人学习管家**：把学习目标拆成单元，按「学 → 练 → 考 → 复习」带流程推进，并记账（AI 花费）、记卡片、画概念图，用治理度量呈现学习进展。当前为 v0.1，已推进至 **M0–M39**。
 
 ## 技术栈（实现期冻结）
 
@@ -36,6 +36,7 @@ hpsl/
 python -m venv .venv
 .venv/Scripts/activate        # Windows
 pip install -r requirements.txt
+pip install -e .              # 生成 hpsl 命令（不装则只能用 python -m hpsl）
 pip install pytest            # 仅跑测试时需要
 
 # 必需：设置密钥库口令（不落盘；丢失则已存 API key 不可恢复）
@@ -44,6 +45,7 @@ export HPSL_MASTER_PASSPHRASE="换成一个足够长的口令"      # bash
 
 # 启动本地服务（默认 127.0.0.1:8765；端口可经 --port 或环境变量 HPSL_PORT 覆盖）
 hpsl serve
+# 等价写法：python -m hpsl serve（未装 `pip install -e .`、或 venv 重建后都可用）
 # 浏览器打开 http://127.0.0.1:8765
 
 # 启动时默认「恢复到上次所在项目」（读各项目 config 里的 last_active_at，只读不写）。
@@ -52,7 +54,7 @@ hpsl serve --no-restore
 # export HPSL_NO_RESTORE_ACTIVE=1                       # bash
 # $env:HPSL_NO_RESTORE_ACTIVE = "1"                     # PowerShell
 
-# 运行全量测试（M0–M36：692 例通过 + 3 例跳过，含零 DDL 守护）
+# 运行全量测试（M0–M39：740 例通过 + 3 例跳过，含零 DDL 守护）
 .venv/Scripts/python.exe -m pytest -q
 ```
 
@@ -89,7 +91,7 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 安全：本地单机单用户、回环监听；Host/Origin **精确匹配**（含端口）+ 写请求 CSRF 双提交 + 五维限流（process/route/llm_freq/sse_concurrency/write_freq）；无账号体系、无多租户；`/docs` 等文档端点关闭。
 - 密钥：keyring 优先；否则 `HPSL_MASTER_PASSPHRASE` + Argon2id(64MiB/3/4) + **每文件随机 salt**，无口令即拒绝（不降级明文），口令不落盘、不入日志/导出。
 
-## 当前能力（M1–M36）
+## 当前能力（M0–M39）
 
 - 多项目数据底座与审计（M0）
 - 单元八步状态机（INIT → … → CLOSED）+ 复测队列（2/7/21 天）（M2 / M6）
@@ -123,3 +125,6 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 回归修复（行为级）：预算闸门真实拦截（角色/直连调用前校验，超限 A080001）、页面可强行闭环并留理由、复测正常到期可进 21 天档、`serve --port` 与 Host 白名单对齐、概念图空态与布局后连线重算（M36 P0）
 - 错误与交互收口：REST 保留自定义错误文案、`HX-Refresh` 改局部刷新、未捕获异常统一兜底、布尔表单解析、撤销指纹口径（M36 P1）
 - 基线与契约收口：CHG-05/CHG-07 补登记（3 家厂商 / 66 端点 / A080002）、新增 `tests/test_contracts.py` 补齐七类测试守护、REF-1/REF-2/README/操作手册数字回填（M36 P2）
+- 文案纠偏：无密钥报错统一指路「密钥」页（原指向不存在的设置区块），删除 M33 已移除厂商的残留说明（M37）
+- 独立密钥入口：`/keys` 不依赖激活项目即可管理三家厂商密钥（保存 / 测试连接 / 尾号回显 / 锁定态解释）；**费用双币展示**——记账仍为美元（对账口径不动），人民币按项目配置 `usd_cny_rate` 仅做展示折算，预算表 / 超限弹层 / 统计 / 项目详情 / 角色回执统一 `$x（约 ¥y）`（M38）
+- 数据与配置能力：密钥可清除（不解密，锁定态也能撤销填错的 key）、快照可单份删除（白名单校验 + 二次确认）、六角色可绑定具体模型（无密钥时报错不静默降级）、交叉验证前预检厂商密钥（不足两家区分 0 家 / 仅 1 家并说明未产生费用）（M39）

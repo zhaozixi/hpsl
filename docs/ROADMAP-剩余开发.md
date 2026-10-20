@@ -1,8 +1,9 @@
 # HPSL 剩余开发清单（Roadmap）
 
-> 更新：2026-10-19（M39 数据与配置能力补齐之后）
-> 基线：M0–M39 已交付；全量 **739 passed / 3 skipped**
+> 更新：2026-10-20（启动入口与安装说明修补之后）
+> 基线：M0–M39 已交付；全量 **740 passed / 3 skipped**
 > P0 / P1 / P2（含 C9/C12）已清零；剩余仅浏览器 E2E、`pipx` 实测与真实凭据项。
+> 入口现状：`hpsl` 命令与 `python -m hpsl` 两条路均可用（见 `FIX-启动入口与安装说明.md`）。
 
 ---
 
@@ -49,12 +50,15 @@
 
 ## 3. 发布前检查清单
 
-1. `pytest -q` ≥ 739 passed（3 skipped 为无内联脚本的模板，属预期）；
+1. `pytest -q` ≥ 740 passed（3 skipped 为无内联脚本的模板，属预期）；
+   - 本机注意：safe-delete hook 会让进程退出码为 1（清理 `pytest-of-*` 临时目录被 fail-closed 拒绝），
+     判读以 `--junit-xml` 报表或「进度条无 `F`/`E`」为准，非测试失败；
 2. `python .workbuddy/delivery/verify_baseline.py` → `BASELINE INTACT`；
 3. `python scripts/check_package.py` → `结果: PASS`（验证 wheel 打全了模板/静态/提示/YAML）；
-4. `python scripts/live_check.py --model deepseek-flash --role clerk --stream` → 退出码 0；
-5. 设好 `HPSL_MASTER_PASSPHRASE`，`hpsl serve` 后走一遍：建项目 → 建单元 → 产出 → 尝试 → 闭环 → 复测 → 周盘点 → 撤销；
-6. 轮换测试用 API key；确认仓库无 `.fernet`/`*.db`/key。
+4. `hpsl --help` 与 `python -m hpsl --help` 均可用（安装步骤必须含 `pip install -e .`，否则只有后者可用）；
+5. `python scripts/live_check.py --model deepseek-flash --role clerk --stream` → 退出码 0；
+6. 设好 `HPSL_MASTER_PASSPHRASE`，`hpsl serve` 后走一遍：建项目 → 建单元 → 产出 → 尝试 → 闭环 → 复测 → 周盘点 → 撤销；
+7. 轮换测试用 API key；确认仓库无 `.fernet`/`*.db`/key。
 
 ---
 

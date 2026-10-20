@@ -4,6 +4,8 @@
 - AC2：`tool.setuptools.packages.find.include` 含 `hpsl*`（包发现覆盖全部子包）。
 - AC3：`tool.setuptools.package-data.hpsl` 覆盖模板 / 静态资源 / 角色提示词 / 模型 yaml，
   且对应资源目录在源码树中确有文件。
+- AC4：`hpsl/__main__.py` 存在并暴露 `main`，使 `python -m hpsl` 与 `hpsl` 命令等价
+  （`hpsl` 命令由 `pip install -e .` 生成，venv 重建后未重装时 `python -m hpsl` 是唯一入口）。
 
 纪律：只读文件、不执行 pip 安装或构建（离线环境）。
 """
@@ -48,3 +50,14 @@ def test_package_data_covers_templates_static_prompts_and_models():
     prompts = list((ROOT / "hpsl" / "roles" / "prompts").glob("*.md"))
     models = list((ROOT / "hpsl" / "models").glob("*.yaml"))
     assert templates and static and prompts and models
+
+
+def test_python_dash_m_entrypoint_is_wired():
+    """AC4：`python -m hpsl` 依赖 `hpsl/__main__.py`，缺了会让未安装环境的用户无入口可用。"""
+    import importlib
+
+    entry = ROOT / "hpsl" / "__main__.py"
+    assert entry.is_file(), "缺少 hpsl/__main__.py，`python -m hpsl` 不可用"
+
+    mod = importlib.import_module("hpsl.__main__")
+    assert callable(mod.main), "hpsl/__main__.py 必须暴露 main"
