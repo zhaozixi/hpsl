@@ -29,7 +29,7 @@ def _create_and_switch(client, csrf_headers, name="M10项目", goal="目标g"):
 def test_healthz_phase_m10(client):
     r = client.get("/healthz")
     assert r.status_code == 200
-    assert r.json()["phase"] == "M36"
+    assert r.json()["phase"] == "M40"
 
 
 def test_readyz_ok_under_temp_home(client, csrf_headers):

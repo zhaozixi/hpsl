@@ -88,6 +88,10 @@ def list_projects_api():
 @api_router.post("/projects/{pid}/switch", dependencies=[Depends(write_security)])
 def switch_api(pid: str):
     vo = _require_project(pid)
+    # M41/F-04：归档项目不允许被设为当前项目。页面已隐藏切换按钮，但直接调 API
+    # 或旧链接仍可能绕过；归档语义是「收起来」，继续当 active 会让顶栏与操作对象脱节。
+    if vo.archived_at:
+        raise BizError("A010001", msg="该项目已归档，请先取消归档再切换")
     proj.set_active(pid)  # 进程内 active 句柄（M0 设计，不写库）
     # AC7：切换须留痕。M0 set_active 为内存句柄无 db 写入，且 M1 不改 projects.py 逻辑，
     # 故经 db.write 唯一入口（set_config 合并 last_active_at）留下审计条目；ConfigVO 忽略该键。

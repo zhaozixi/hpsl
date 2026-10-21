@@ -35,6 +35,6 @@ def test_readyz_does_not_leave_probe(client, csrf_headers):
     pid = _project(client, csrf_headers, "readyz")
     r = client.get("/readyz")
     assert r.status_code == 200
-    assert r.json()["phase"] == "M36"
+    assert r.json()["phase"] == "M40"
     probe = Path(projects._config.project_dir(pid)) / ".hpsl-readyz-probe"
     assert not probe.exists()

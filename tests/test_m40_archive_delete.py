@@ -65,6 +65,22 @@ def test_archive_active_project_clears_active(client, csrf_headers):
     assert proj.active_label() is None
 
 
+def test_archived_project_cannot_be_switched(client, csrf_headers):
+    """M41/F-04：归档项目不能被设为 active（页面隐藏按钮，API 也必须拒绝）。"""
+    pid = _mk(client, csrf_headers, "归档不可切换")
+    client.post(f"/api/v1/projects/{pid}/archive", headers=csrf_headers)
+    r = client.post(f"/api/v1/projects/{pid}/switch", headers=csrf_headers)
+    body = r.json()
+    assert body["code"] == "A010001", body
+    assert "已归档" in body["msg"]
+    assert proj.active_project() is None
+
+    client.post(f"/api/v1/projects/{pid}/unarchive", headers=csrf_headers)
+    r2 = client.post(f"/api/v1/projects/{pid}/switch", headers=csrf_headers)
+    assert r2.json()["code"] == "0", r2.text
+    assert proj.active_project().id == pid
+
+
 def test_unarchive_restores_to_list(client, csrf_headers):
     pid = _mk(client, csrf_headers)
     client.post(f"/api/v1/projects/{pid}/archive", headers=csrf_headers)

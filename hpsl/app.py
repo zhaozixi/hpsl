@@ -156,7 +156,7 @@ if FastAPI is not None:
     @app.get("/healthz")
     def healthz():
         # Liveness：进程存活（§3.2.M10.2）
-        return {"status": "ok", "service": "hpsl", "phase": "M36"}
+        return {"status": "ok", "service": "hpsl", "phase": "M40"}
 
     @app.get("/readyz")
     def readyz():
@@ -168,7 +168,7 @@ if FastAPI is not None:
             ready = False
         if not ready:
             return JSONResponse(status_code=503, content={"status": "not_ready", "service": "hpsl"})
-        return {"status": "ok", "service": "hpsl", "phase": "M36"}
+        return {"status": "ok", "service": "hpsl", "phase": "M40"}
 
 else:  # pragma: no cover - 占位降级
     app = None

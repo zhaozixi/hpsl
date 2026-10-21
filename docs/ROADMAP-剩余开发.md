@@ -1,7 +1,7 @@
 # HPSL 剩余开发清单（Roadmap）
 
 > 更新：2026-10-21（M40 项目归档/删除 + 浏览器 E2E 之后）
-> 基线：M0–M40 已交付；全量 **754 passed / 4 skipped**（其中 1 skipped 为默认关闭的 E2E）
+> 基线：M0–M40 已交付；全量 **756 passed / 4 skipped**（其中 1 skipped 为默认关闭的 E2E）
 > P0 / P1 / P2（含 C9/C12）已清零；剩余仅 `pipx` 实测与真实凭据项。
 > 入口现状：`hpsl` 命令与 `python -m hpsl` 两条路均可用（见 `FIX-启动入口与安装说明.md`）。
 
@@ -50,7 +50,7 @@
 
 ## 3. 发布前检查清单
 
-1. `pytest -q` ≥ 754 passed（4 skipped = 3 个无内联脚本的模板 + 1 个默认关闭的 E2E，属预期）；
+1. `pytest -q` ≥ 756 passed（4 skipped = 3 个无内联脚本的模板 + 1 个默认关闭的 E2E，属预期）；
    - 本机注意：safe-delete hook 会让进程退出码为 1（清理 `pytest-of-*` 临时目录被 fail-closed 拒绝），
      判读以 `--junit-xml` 报表或「进度条无 `F`/`E`」为准，非测试失败；
 2. `HPSL_E2E=1 pytest tests/e2e -q` → 1 passed（浏览器真点击，约 25s；缺 node/playwright 自动 skip）；

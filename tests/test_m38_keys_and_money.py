@@ -29,7 +29,13 @@ def test_fmt_usd_digits(usd, expected):
 
 @pytest.mark.parametrize(
     "usd, rate, expected",
-    [(0.0123, 7.2, "¥0.09"), (10.0, 7.2, "¥72.00"), (0.0001, 7.2, "¥0.0007"), (10.0, 7.0, "¥70.00")],
+    [
+        (0.0123, 7.2, "¥0.09"),
+        (10.0, 7.2, "¥72.00"),
+        (0.0001, 7.2, "¥0.0007"),
+        (0.000001, 7.2, "¥0.000007"),
+        (10.0, 7.0, "¥70.00"),
+    ],
 )
 def test_fmt_cny(usd, rate, expected):
     assert money.fmt_cny(usd, rate) == expected

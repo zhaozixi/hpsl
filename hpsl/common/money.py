@@ -29,10 +29,15 @@ def _usd_digits(value: float) -> int:
 
 
 def _cny_digits(value: float) -> int:
-    """人民币位数：≥0.01 两位（¥0.09 / ¥72.00），更小四位；零显示两位。"""
+    """人民币位数：≥0.01 两位（¥0.09 / ¥72.00），[0.0001,0.01) 四位，更小六位。
+
+    六位下限避免极小费用被四舍五入成「¥0.0000」——那等于告诉用户没花钱。
+    """
     a = abs(value)
     if a == 0:
         return 2
+    if a < 0.0001:
+        return 6
     return 4 if a < 0.01 else 2
 
 
