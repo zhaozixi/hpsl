@@ -25,6 +25,8 @@ def test_project_lifecycle_in_browser(live_server, node_playwright, flows_dir):
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=240,
     )
     out = (proc.stdout or "") + (proc.stderr or "")

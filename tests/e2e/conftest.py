@@ -89,6 +89,8 @@ def live_server(tmp_path_factory):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     base = f"http://127.0.0.1:{port}"
     try:
@@ -118,6 +120,8 @@ def node_playwright():
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=60,
     )
     if probe.returncode != 0 or "ok" not in probe.stdout:
