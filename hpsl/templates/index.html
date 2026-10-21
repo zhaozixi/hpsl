@@ -5,33 +5,7 @@
 <h1>项目列表</h1>
 
 {{ help_banner("这里是你的所有学习项目",
-   "每一个项目 = 你想学会的一件事（比如「学会 Python 数据分析」）。点进去就能看到它的学习单元、概念图和统计。") }}
+   "每一个项目 = 你想学会的一件事（比如「学会 Python 数据分析」）。点进去就能看到它的学习单元、概念图和统计。学完或暂时不想看的项目可以「归档」收起来，数据不会丢。") }}
 
-{% if not projects %}
-<div class="wizard-cta">
-  <h2>欢迎使用 HPSL</h2>
-  <p>这是你第一次启动，跟着向导四步即可上手：建项目 → 填密钥 → 测连接 → 开始学习。</p>
-  <p><a class="cta" href="/wizard">▶ 开始首次启动向导</a></p>
-  <p class="mt-lg"><a href="/projects/new">或手动新建项目</a></p>
-</div>
-{% else %}
-<p>
-  <a class="btn btn-sm" href="/projects/new">+ 新建项目</a>
-  <a class="btn btn-sm" href="/wizard">首次启动向导</a>
-</p>
-<ul id="project-list" class="card list-clean">
-  {% for p in projects %}
-  <li>
-    <a href="/projects/{{ p.id }}"><b>{{ p.name }}</b></a> — <span class="text-muted">{{ p.goal }}</span>
-    {% if p.id == active_id %}
-      <span class="badge ok">当前</span>
-    {% else %}
-      <button class="btn btn-sm" type="button" data-action="switch-project" data-pid="{{ p.id }}">切换到此项目</button>
-    {% endif %}
-  </li>
-  {% else %}
-  <li class="text-muted">暂无项目</li>
-  {% endfor %}
-</ul>
-{% endif %}
+{% include "_project_panel.html" %}
 {% endblock %}

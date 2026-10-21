@@ -51,4 +51,40 @@
 </section>
 
 <p><a href="/">返回列表</a></p>
+
+{% if project.archived_at %}
+<p><span class="badge warn">已归档</span> <span class="text-muted">此项目已从列表收起（归档于 {{ project.archived_at[:10] }}），数据完整保留，也不参与启动恢复。</span></p>
+{% endif %}
+
+<section class="card danger-zone">
+  <h2>项目操作</h2>
+  <p class="text-muted">
+    <b>归档</b>：从项目列表收起来，库、快照、花费记录全部保留，随时可取消归档。<br>
+    <b>删除</b>：整目录移到 <code>HPSL_HOME/trash/</code>，不做不可逆销毁，可从文件系统取回。
+  </p>
+
+  {% if project.archived_at %}
+  <form class="inline-form" hx-post="/api/v1/projects/{{ project.id }}/unarchive" hx-swap="none">
+    <input type="hidden" name="origin" value="detail">
+    <button class="btn btn-sm" type="submit">取消归档</button>
+  </form>
+  {% else %}
+  <form class="inline-form" hx-post="/api/v1/projects/{{ project.id }}/archive" hx-swap="none">
+    <input type="hidden" name="origin" value="detail">
+    <button class="btn btn-sm" type="submit">归档此项目</button>
+  </form>
+  {% endif %}
+
+  <details>
+    <summary class="text-muted">删除这个项目…</summary>
+    <form class="inline-form" hx-post="/api/v1/projects/{{ project.id }}/delete" hx-swap="none">
+      <input type="hidden" name="origin" value="detail">
+      <label>输入项目名「{{ project.name }}」确认：
+        <input class="input" name="confirm_name" required autocomplete="off">
+      </label>
+      <button class="btn btn-danger btn-sm" type="submit">移入回收目录</button>
+    </form>
+    <p class="text-muted">删除后本页会自动回到项目列表；取回方式见 <code>HPSL_HOME/trash/</code>。</p>
+  </details>
+</section>
 {% endblock %}

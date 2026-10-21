@@ -48,12 +48,17 @@ _active_label: Optional[str] = None
 # ---------------------------------------------------------------------------
 def _read_project_row(pid: str) -> dict:
     """读取 project 行（config 解析为 dict）。不存在 → A010001。"""
+    # 先判库文件是否在：目录不存在时 sqlite3.connect 只会抛 OperationalError
+    # （"unable to open database file"），冒到上层就是 500。这里统一收敛成 A010001（404）。
+    if not _config.db_path(pid).exists():
+        raise BizError("A010001")
     rows = _db.query(pid, "SELECT * FROM project WHERE id=?", (pid,))
     if not rows:
         raise BizError("A010001")
     row = rows[0]
     cfg_raw = row.get("config")
     config_dict = json.loads(cfg_raw) if isinstance(cfg_raw, str) else (cfg_raw or {})
+    archived = config_dict.get("archived_at")
     return {
         "id": row["id"],
         "name": config_dict.get("name", ""),
@@ -61,6 +66,8 @@ def _read_project_row(pid: str) -> dict:
         "initial_belief": row.get("initial_belief"),
         "created_at": row["created_at"],
         "config": config_dict,
+        # 只承认非空字符串；历史数据里若被写成 null/空串，一律视为未归档。
+        "archived_at": archived if isinstance(archived, str) and archived else None,
     }
 
 
@@ -96,6 +103,7 @@ def _row_to_vo(row: dict) -> ProjectVO:
         initial_belief=row.get("initial_belief"),
         db_path=str(_config.db_path(row["id"])),
         created_at=row["created_at"],
+        archived_at=row.get("archived_at"),
     )
 
 
@@ -163,8 +171,12 @@ def create_project(
     return vo
 
 
-def list_projects() -> list[ProjectVO]:
-    """扫描项目根目录，返回全部项目 VO（按创建时间升序）。"""
+def list_projects(include_archived: bool = True) -> list[ProjectVO]:
+    """扫描项目根目录，返回项目 VO（按创建时间升序）。
+
+    `include_archived` 默认 True：保持既有调用方（REST、备份/轮转 CLI）语义不变——
+    备份必须覆盖归档项目，否则归档等于丢数据。**页面**才显式传 False 把归档项藏起来。
+    """
     root = _config.projects_root()
     if not root.exists():
         return []
@@ -175,6 +187,8 @@ def list_projects() -> list[ProjectVO]:
         try:
             row = _read_project_row(child.name)
         except BizError:
+            continue
+        if row["archived_at"] and not include_archived:
             continue
         vos.append(_row_to_vo(row))
     vos.sort(key=lambda v: v.created_at)
@@ -209,6 +223,79 @@ def active_label() -> Optional[str]:
     return _active_label if _active_pid is not None else None
 
 
+def _clear_active() -> None:
+    """清空 active 句柄（项目归档/删除后调用）。
+
+    不换成「自动跳到下一个项目」：隐式换项目会让顶栏显示的项目与用户认知脱节，
+    宁可退回「未选择项目」空态，由用户显式切换。
+    """
+    global _active_pid, _active_label
+    _active_pid = None
+    _active_label = None
+
+
+def is_archived(pid: str) -> bool:
+    """项目是否已归档（读 config.archived_at，零 DDL）。"""
+    return _read_project_row(pid)["archived_at"] is not None
+
+
+def set_archived(pid: str, archived: bool, actor: str = "user") -> ProjectVO:
+    """归档 / 取消归档（经 db.write 审计，零 DDL）。
+
+    - 归档：写 `config.archived_at`（UTC ISO-8601）；**幂等**——已归档则保留原时间戳，
+      重复点击不会把「归档时间」刷新成今天，避免历史被悄悄改写。
+    - 取消归档：置 null（`_read_project_row` 与 `ConfigVO` 都把它当"未归档"）。
+    - 归档当前 active 项目 → 清空 active 句柄（归档语义是"先收起来"，不该还占着当前位）。
+    - 归档不是删除：项目目录、库、快照全部保留，备份/轮转 CLI 仍然覆盖它。
+    """
+    row = _read_project_row(pid)
+    current = row["archived_at"]
+    if archived:
+        if not current:
+            set_config(pid, {"archived_at": _db._now_utc()}, actor=actor)
+        if _active_pid == pid:
+            _clear_active()
+    elif current:
+        set_config(pid, {"archived_at": None}, actor=actor)
+    return get_project(pid)
+
+
+def delete_project(pid: str, confirm_name: str, actor: str = "user") -> str:
+    """删除项目：整目录移入 `HPSL_HOME/trash/`，返回回收目录路径。
+
+    三个设计取舍（都不是随手写的）：
+
+    1. **要求确认项目名**：删除不可撤销，只按 pid 或一次点击就删太危险。调用方必须传
+       与项目名逐字一致的 `confirm_name`，否则 C400001（参数错误，不是"项目不存在"）。
+    2. **不 rmtree，改为 rename 到 trash/**：同分区 rename 是原子的，误删可直接从
+       文件系统取回；真删（清空 trash）交给用户自己决定，程序不替用户做不可逆操作。
+    3. **先关连接再 rename**：Windows 上库文件被 sqlite 占用时 rename 会失败；
+       `db.close_project` 释放写连接（含 WAL checkpoint）后再动目录。
+
+    审计说明：project.db 随目录进 trash，删除前的全部审计记录仍在库内可查；
+    本操作本身不额外写审计行（库已不在此路径，写了也读不到）。
+    """
+    row = _read_project_row(pid)
+    expect = row["name"] or pid
+    if not isinstance(confirm_name, str) or confirm_name.strip() != expect:
+        raise BizError("C400001", msg=f"确认的项目名不匹配，未删除。请输入「{expect}」再试")
+
+    src = _db.safe_path(pid)  # 防目录穿越（C400002）
+    ts = _db._now_utc().replace(":", "-")
+    trash = _config.trash_root()
+    dest = trash / f"{pid}-{ts}"
+    try:
+        trash.mkdir(parents=True, mode=_DIR_MODE, exist_ok=True)
+        _db.close_project(pid)
+        src.rename(dest)
+    except OSError as exc:
+        raise BizError("B999001", msg=f"删除失败（目录未移动，项目仍在）：{exc}") from exc
+
+    if _active_pid == pid:
+        _clear_active()
+    return str(dest)
+
+
 def restore_last_active() -> Optional[ProjectVO]:
     """启动时恢复「上次所在项目」（显式调用；**不得**在模块导入期执行）。
 
@@ -221,11 +308,12 @@ def restore_last_active() -> Optional[ProjectVO]:
     - 一个时间戳都没有 → 返回 None（不猜测，保持原有「未选项目」空态）；
     - 时间戳统一由 `_switch_ts()` 生成（UTC 定长 ISO-8601），可直接字典序比较；
     - 单个项目读取失败 → 跳过，不影响其它项目；
+    - **归档项目不参与恢复**：归档语义就是"收起来"，启动时还跳回去等于没归档；
     - 选中项目已不可读 → set_active 抛 A010001，由调用方捕获（不影响启动）。
     """
     best_pid: Optional[str] = None
     best_ts = ""
-    for vo in list_projects():
+    for vo in list_projects(include_archived=False):
         try:
             ts = get_raw_config(vo.id).get("last_active_at")
         except BizError:
@@ -281,6 +369,7 @@ def update_initial_belief(pid: str, belief: Optional[str], actor: str = "user") 
         initial_belief=belief,
         db_path=str(_config.db_path(pid)),
         created_at=row["created_at"],
+        archived_at=row.get("archived_at"),
     )
 
 

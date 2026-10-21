@@ -61,6 +61,15 @@ def db_path(pid: str) -> Path:
     return project_dir(pid) / "project.db"
 
 
+def trash_root() -> Path:
+    """删除项目的回收目录：HPSL_HOME/trash/。
+
+    删除项目不直接 rmtree，而是整目录 rename 到这里（同分区 rename 是原子的），
+    误删可从文件系统直接取回。零 DDL、不引入库对象。
+    """
+    return home() / "trash"
+
+
 def service_port() -> int:
     """服务端口，默认 8765，可被 HPSL_PORT 覆盖。"""
     try:

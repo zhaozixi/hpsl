@@ -38,6 +38,9 @@ class ProjectVO:
     initial_belief: Optional[str]
     db_path: str  # 展示用，不暴露目录遍历（safe_path 约束）
     created_at: str  # ISO-8601 UTC
+    # 归档时间（UTC ISO-8601）；None = 未归档。落库位置是 project.config 的
+    # `archived_at` 键（零 DDL：冻结基线的 project 表不加列）。
+    archived_at: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)

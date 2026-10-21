@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import html
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -165,19 +166,104 @@ def backup_api(pid: str, req: Request):
 
 
 # ---------------------------------------------------------------------------
+# API：归档 / 取消归档 / 删除（零 DDL：状态落在 project.config）
+# ---------------------------------------------------------------------------
+def _project_panel_context(message: Optional[str] = None, level: str = "ok") -> dict:
+    """首页项目面板的统一上下文（整页渲染与 HTMX 片段共用，避免两处口径漂移）。"""
+    all_vo = proj.list_projects()
+    active = proj.active_project()
+    return {
+        "projects": [p.to_dict() for p in all_vo if not p.archived_at],
+        "archived": [p.to_dict() for p in all_vo if p.archived_at],
+        "active_id": active.id if active else None,
+        "message": message,
+        "message_level": level,
+    }
+
+
+def _render_panel(req: Request, message: Optional[str] = None, level: str = "ok"):
+    return _TEMPLATES.TemplateResponse(
+        request=req,
+        name="_project_panel.html",
+        context=_project_panel_context(message, level),
+    )
+
+
+async def _origin(req: Request) -> str:
+    """判断操作来自列表页还是详情页：决定「就地换片段」还是「整页回列表」。
+
+    详情页归档/删除后，当前 URL 已经没有意义（归档项不在列表里、删除项直接不存在），
+    留着不放会让用户看到一份"已归档/已消失"的页面，所以走 HX-Redirect 回列表。
+    """
+    data = await _parse_body(req)
+    return (data.get("origin") or "list") if isinstance(data, dict) else "list"
+
+
+@api_router.post("/projects/{pid}/archive", dependencies=[Depends(write_security)])
+async def archive_api(pid: str, req: Request):
+    try:
+        vo = proj.set_archived(pid, True)
+    except BizError as exc:
+        if _is_htmx(req):
+            return _render_panel(req, exc.msg, "err")
+        raise
+    if _is_htmx(req) and await _origin(req) == "detail":
+        return HTMLResponse("", headers={"HX-Redirect": "/"})
+    if _is_htmx(req):
+        return _render_panel(req, f"已归档「{vo.name}」——数据全部保留，可在「已归档」里找回")
+    return ok(vo.to_dict())
+
+
+@api_router.post("/projects/{pid}/unarchive", dependencies=[Depends(write_security)])
+async def unarchive_api(pid: str, req: Request):
+    try:
+        vo = proj.set_archived(pid, False)
+    except BizError as exc:
+        if _is_htmx(req):
+            return _render_panel(req, exc.msg, "err")
+        raise
+    if _is_htmx(req) and await _origin(req) == "detail":
+        # 取消归档后项目仍在，回详情页让「已归档」标记消失，比跳列表更贴合操作位置。
+        return HTMLResponse("", headers={"HX-Redirect": f"/projects/{pid}"})
+    if _is_htmx(req):
+        return _render_panel(req, f"已把「{vo.name}」恢复到项目列表")
+    return ok(vo.to_dict())
+
+
+@api_router.post("/projects/{pid}/delete", dependencies=[Depends(write_security)])
+async def delete_api(pid: str, req: Request):
+    data = await _parse_body(req)
+    confirm = data.get("confirm_name") if isinstance(data, dict) else None
+    origin = (data.get("origin") or "list") if isinstance(data, dict) else "list"
+    try:
+        name = proj.get_project(pid).name
+        dest = proj.delete_project(pid, confirm, actor="user")  # 名称不符 → C400001
+    except BizError as exc:
+        # HTMX 通道把业务错误翻成「完整面板 + 顶部红条」：错误片段若直接替换面板，
+        # 用户会连项目列表一起失去，还得手动刷新——这是 M40 特意避开的坑。
+        if _is_htmx(req):
+            return _render_panel(req, exc.msg, "err")
+        raise
+    if _is_htmx(req) and origin == "detail":
+        return HTMLResponse("", headers={"HX-Redirect": "/"})
+    if _is_htmx(req):
+        return _render_panel(
+            req,
+            f"已删除「{name}」——项目目录已移入回收目录：{Path(dest).name}",
+            "warn",
+        )
+    return ok({"deleted": pid, "name": name, "trash_path": dest})
+
+
+# ---------------------------------------------------------------------------
 # 页面（Jinja2 + HTMX）
 # ---------------------------------------------------------------------------
 @page_router.get("/")
 def index_page(req: Request):
-    projects = proj.list_projects()
-    active = proj.active_project()
     return _TEMPLATES.TemplateResponse(
         request=req,
         name="index.html",
-        context={
-            "projects": [p.to_dict() for p in projects],
-            "active_id": active.id if active else None,
-        },
+        context=_project_panel_context(),
     )
 
 

@@ -1,0 +1,76 @@
+{# 项目面板：首页整页与归档/取消归档/删除的 HTMX 片段共用同一份模板。
+   片段替换靠 hx-target="#project-panel" + hx-swap="outerHTML"，外层 id 必须保留。 #}
+<div id="project-panel">
+{% if message %}
+<p class="banner {{ message_level }}" role="status">{{ message }}</p>
+{% endif %}
+
+{% if not projects and not archived %}
+<div class="wizard-cta">
+  <h2>欢迎使用 HPSL</h2>
+  <p>这是你第一次启动，跟着向导四步即可上手：建项目 → 填密钥 → 测连接 → 开始学习。</p>
+  <p><a class="cta" href="/wizard">▶ 开始首次启动向导</a></p>
+  <p class="mt-lg"><a href="/projects/new">或手动新建项目</a></p>
+</div>
+{% else %}
+<div class="inline-actions">
+  <a class="btn btn-sm" href="/projects/new">+ 新建项目</a>
+  <a class="btn btn-sm" href="/wizard">首次启动向导</a>
+</div>
+
+{% if projects %}
+<ul id="project-list" class="card list-clean">
+  {% for p in projects %}
+  <li>
+    <a href="/projects/{{ p.id }}"><b>{{ p.name }}</b></a> — <span class="text-muted">{{ p.goal }}</span>
+    <div class="inline-actions">
+      {% if p.id == active_id %}
+        <span class="badge ok">当前</span>
+      {% else %}
+        <button class="btn btn-sm" type="button" data-action="switch-project" data-pid="{{ p.id }}">切换到此项目</button>
+      {% endif %}
+      <form class="inline-form" hx-post="/api/v1/projects/{{ p.id }}/archive"
+            hx-target="#project-panel" hx-swap="outerHTML">
+        <button class="btn btn-sm" type="submit"
+                title="从列表收起来；项目数据、快照、花费记录全部保留">归档</button>
+      </form>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-muted">项目都已归档，展开下面的「已归档」可以恢复。</p>
+{% endif %}
+
+{% if archived %}
+<details class="card archived-box" id="archived-box" open>
+  <summary>已归档（{{ archived|length }}）—— 数据仍在，不参与启动恢复</summary>
+  <ul class="list-clean">
+    {% for p in archived %}
+    <li>
+      <a href="/projects/{{ p.id }}"><b>{{ p.name }}</b></a> — <span class="text-muted">{{ p.goal }}</span>
+      <span class="text-muted">（归档于 {{ p.archived_at[:10] }}）</span>
+      <div class="inline-actions">
+        <form class="inline-form" hx-post="/api/v1/projects/{{ p.id }}/unarchive"
+              hx-target="#project-panel" hx-swap="outerHTML">
+          <button class="btn btn-sm" type="submit">取消归档</button>
+        </form>
+      </div>
+      <details class="danger-zone">
+        <summary class="text-muted">删除这个项目…</summary>
+        <form class="inline-form" hx-post="/api/v1/projects/{{ p.id }}/delete"
+              hx-target="#project-panel" hx-swap="outerHTML">
+          <label>输入项目名「{{ p.name }}」确认：
+            <input class="input" name="confirm_name" required autocomplete="off">
+          </label>
+          <button class="btn btn-danger btn-sm" type="submit">移入回收目录</button>
+        </form>
+        <p class="text-muted">删除不是销毁：整个项目目录会移到 HPSL_HOME/trash/ 下，可从文件系统取回。</p>
+      </details>
+    </li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+{% endif %}
+</div>

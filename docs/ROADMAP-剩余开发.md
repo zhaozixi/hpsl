@@ -1,8 +1,8 @@
 # HPSL 剩余开发清单（Roadmap）
 
-> 更新：2026-10-20（启动入口与安装说明修补之后）
-> 基线：M0–M39 已交付；全量 **740 passed / 3 skipped**
-> P0 / P1 / P2（含 C9/C12）已清零；剩余仅浏览器 E2E、`pipx` 实测与真实凭据项。
+> 更新：2026-10-21（M40 项目归档/删除 + 浏览器 E2E 之后）
+> 基线：M0–M40 已交付；全量 **754 passed / 4 skipped**（其中 1 skipped 为默认关闭的 E2E）
+> P0 / P1 / P2（含 C9/C12）已清零；剩余仅 `pipx` 实测与真实凭据项。
 > 入口现状：`hpsl` 命令与 `python -m hpsl` 两条路均可用（见 `FIX-启动入口与安装说明.md`）。
 
 ---
@@ -36,7 +36,7 @@
 |---|---|---|
 | E-01 | M12 / M22 专项测试 | ✅ M31 |
 | E-02 | `serve()` / WAL / FTS 边界 | ✅ M31/M36（`_prepare_serve` 已测；WAL/检索边界已测） |
-| E-03 | 前端行为测试 | ◐ `node --check` + 模板结构；无浏览器 E2E 进套件 |
+| E-03 | 前端行为测试 | ✅ M40（`tests/e2e/` 浏览器剧本进套件，`HPSL_E2E=1` 开启，默认 skip） |
 | E-04 | 环境与依赖 | ✅ M33（C 盘 junction）；`pipx install .` 未实测 |
 | E-05 | 知识库页面 | ✅ M31（含增量索引） |
 | E-06 | 衰减页面化 | ✅ M31 |
@@ -50,15 +50,16 @@
 
 ## 3. 发布前检查清单
 
-1. `pytest -q` ≥ 740 passed（3 skipped 为无内联脚本的模板，属预期）；
+1. `pytest -q` ≥ 754 passed（4 skipped = 3 个无内联脚本的模板 + 1 个默认关闭的 E2E，属预期）；
    - 本机注意：safe-delete hook 会让进程退出码为 1（清理 `pytest-of-*` 临时目录被 fail-closed 拒绝），
      判读以 `--junit-xml` 报表或「进度条无 `F`/`E`」为准，非测试失败；
-2. `python .workbuddy/delivery/verify_baseline.py` → `BASELINE INTACT`；
-3. `python scripts/check_package.py` → `结果: PASS`（验证 wheel 打全了模板/静态/提示/YAML）；
-4. `hpsl --help` 与 `python -m hpsl --help` 均可用（安装步骤必须含 `pip install -e .`，否则只有后者可用）；
-5. `python scripts/live_check.py --model deepseek-flash --role clerk --stream` → 退出码 0；
-6. 设好 `HPSL_MASTER_PASSPHRASE`，`hpsl serve` 后走一遍：建项目 → 建单元 → 产出 → 尝试 → 闭环 → 复测 → 周盘点 → 撤销；
-7. 轮换测试用 API key；确认仓库无 `.fernet`/`*.db`/key。
+2. `HPSL_E2E=1 pytest tests/e2e -q` → 1 passed（浏览器真点击，约 25s；缺 node/playwright 自动 skip）；
+3. `python .workbuddy/delivery/verify_baseline.py` → `BASELINE INTACT`；
+4. `python scripts/check_package.py` → `结果: PASS`（验证 wheel 打全了模板/静态/提示/YAML）；
+5. `hpsl --help` 与 `python -m hpsl --help` 均可用（安装步骤必须含 `pip install -e .`，否则只有后者可用）；
+6. `python scripts/live_check.py --model deepseek-flash --role clerk --stream` → 退出码 0；
+7. 设好 `HPSL_MASTER_PASSPHRASE`，`hpsl serve` 后走一遍：建项目 → 建单元 → 产出 → 尝试 → 闭环 → 复测 → 周盘点 → 撤销；
+8. 轮换测试用 API key；确认仓库无 `.fernet`/`*.db`/key。
 
 ---
 
@@ -126,3 +127,19 @@
 | 更正 | 「快照无限堆积」判断有误——`rotate_backups`（日 7 + 月 12）与 `cleanup_pre_restore`（留 3）一直存在；本批只补「手动删单份」 |
 | 验证 | 739 passed / 3 skipped（新增 24 例）；BASELINE INTACT；打包 PASS；浏览器 12 项 PASS、0 console error |
 | 未做 | 项目归档/删除、三问进度量、浏览器 E2E 进套件、导出双币（对账口径，有意不做） |
+| 后续销账 | 项目归档/删除与浏览器 E2E **已在 M40 完成**；剩余：三问进度量、导出双币（仍有意不做） |
+
+---
+
+## 9. M40 变更摘要（2026-10-21，项目归档/删除 + 浏览器 E2E）
+
+| 类别 | 内容 |
+|---|---|
+| 归档 | `projects.set_archived`：写 `config.archived_at`（零 DDL）；**幂等**（重复归档不刷新时间）；归档 active 项目则清空 active 句柄；`restore_last_active` 跳过归档项 |
+| 列表口径 | `list_projects(include_archived=True)` **默认含归档**（备份/轮转 CLI 依赖，归档不能等于丢备份）；页面显式传 False，拆「活跃列表 + 已归档折叠区」 |
+| 删除 | 要求 `confirm_name` 逐字等于项目名；**不 rmtree**，整目录 `rename` 到 `HPSL_HOME/trash/{pid}-{UTC}`（原子、可恢复）；先 `close_project` 释放 Windows 文件占用 |
+| 页面 | 抽 `_project_panel.html`（整页与 HTMX 片段共用，防口径漂移）；错误返回**完整面板 + `.banner.err`**，不用错误片段顶掉列表；详情页操作走 `HX-Redirect` |
+| 顺带修复 | `_read_project_row` 先判库文件存在，不存在 → `A010001`（此前 sqlite 抛 `unable to open database file` 冒成 500） |
+| E2E | `tests/e2e/`：子进程起真实服务（避免 autouse `isolated_home` 把同进程服务带偏）+ Playwright 剧本；`HPSL_E2E=1` 开启、默认 skip；缺 node/playwright 自动 skip；剧本 15 步 |
+| 验证 | 754 passed / 4 skipped（新增 14 例）；E2E 1 passed / 23s；BASELINE INTACT；打包 PASS（108 条目） |
+| 未做 | trash 不自动清理（何时算"真不要了"只有用户知道）；界面化回收站；三问进度量 |

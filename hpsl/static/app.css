@@ -267,5 +267,18 @@ html.dark .modal-close:hover{background:var(--surface-2); color:var(--text);}
 .btn-danger:focus-visible{outline:3px solid var(--err-bd); outline-offset:2px;}
 html.dark .btn-danger{color:#fca5a5; border-color:#b91c1c; background:transparent;}
 html.dark .btn-danger:hover{background:rgba(185,28,28,.18); color:#fecaca;}
+
+/* M40：项目归档/删除。列表项里的操作要能和文字同排但不换行错位。 */
+.inline-actions{display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2); margin:var(--sp-2) 0 0;}
+.inline-form{display:inline-flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2); margin:0;}
+/* form 默认块级，在 <li> 里内联排列需显式收紧 */
+.inline-form .input{max-width:220px;}
+.archived-box{margin-top:var(--sp-4);}
+.archived-box>summary{cursor:pointer; color:var(--text-muted); font-weight:600;}
+.archived-box[open]>summary{margin-bottom:var(--sp-2);}
+.danger-zone{border:1px dashed var(--border-strong); border-radius:var(--r-md); padding:var(--sp-3); margin-top:var(--sp-3);}
+.danger-zone>summary{cursor:pointer;}
+html.dark .danger-zone{border-color:#4b5563;}
+
 /* `.btn` 显式声明了 display:inline-flex，会覆盖 hidden 属性的 UA 样式，这里补回 */
 .btn[hidden]{display:none;}

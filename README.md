@@ -1,6 +1,6 @@
 # HPSL · 本地个人学习管家
 
-HPSL（项目制学习框架工具，Apache-2.0）是一个**本地运行的个人学习管家**：把学习目标拆成单元，按「学 → 练 → 考 → 复习」带流程推进，并记账（AI 花费）、记卡片、画概念图，用治理度量呈现学习进展。当前为 v0.1，已推进至 **M0–M39**。
+HPSL（项目制学习框架工具，Apache-2.0）是一个**本地运行的个人学习管家**：把学习目标拆成单元，按「学 → 练 → 考 → 复习」带流程推进，并记账（AI 花费）、记卡片、画概念图，用治理度量呈现学习进展。当前为 v0.1，已推进至 **M0–M40**。
 
 ## 技术栈（实现期冻结）
 
@@ -54,8 +54,11 @@ hpsl serve --no-restore
 # export HPSL_NO_RESTORE_ACTIVE=1                       # bash
 # $env:HPSL_NO_RESTORE_ACTIVE = "1"                     # PowerShell
 
-# 运行全量测试（M0–M39：740 例通过 + 3 例跳过，含零 DDL 守护）
+# 运行全量测试（M0–M40：754 例通过 + 4 例跳过，含零 DDL 守护）
 .venv/Scripts/python.exe -m pytest -q
+
+# 浏览器 E2E（默认不跑：真起服务 + 真开 Chromium，约 25 秒；缺 node/playwright 会自动 skip）
+HPSL_E2E=1 .venv/Scripts/python.exe -m pytest tests/e2e -q
 ```
 
 > **本机 venv 说明**：若项目位于非系统盘（如 `D:`），在项目目录内建 venv 会让
@@ -91,7 +94,7 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 安全：本地单机单用户、回环监听；Host/Origin **精确匹配**（含端口）+ 写请求 CSRF 双提交 + 五维限流（process/route/llm_freq/sse_concurrency/write_freq）；无账号体系、无多租户；`/docs` 等文档端点关闭。
 - 密钥：keyring 优先；否则 `HPSL_MASTER_PASSPHRASE` + Argon2id(64MiB/3/4) + **每文件随机 salt**，无口令即拒绝（不降级明文），口令不落盘、不入日志/导出。
 
-## 当前能力（M0–M39）
+## 当前能力（M0–M40）
 
 - 多项目数据底座与审计（M0）
 - 单元八步状态机（INIT → … → CLOSED）+ 复测队列（2/7/21 天）（M2 / M6）
@@ -128,3 +131,5 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 文案纠偏：无密钥报错统一指路「密钥」页（原指向不存在的设置区块），删除 M33 已移除厂商的残留说明（M37）
 - 独立密钥入口：`/keys` 不依赖激活项目即可管理三家厂商密钥（保存 / 测试连接 / 尾号回显 / 锁定态解释）；**费用双币展示**——记账仍为美元（对账口径不动），人民币按项目配置 `usd_cny_rate` 仅做展示折算，预算表 / 超限弹层 / 统计 / 项目详情 / 角色回执统一 `$x（约 ¥y）`（M38）
 - 数据与配置能力：密钥可清除（不解密，锁定态也能撤销填错的 key）、快照可单份删除（白名单校验 + 二次确认）、六角色可绑定具体模型（无密钥时报错不静默降级）、交叉验证前预检厂商密钥（不足两家区分 0 家 / 仅 1 家并说明未产生费用）（M39）
+- 项目归档与删除：归档写 `config.archived_at`（零 DDL，幂等、不影响备份与统计、启动恢复跳过）收进列表折叠区；删除要求逐字输入项目名，整目录 rename 到 `HPSL_HOME/trash/`（可恢复，不做不可逆销毁）（M40）
+- 浏览器 E2E 进套件：`tests/e2e/` 用子进程起真实服务 + Playwright 剧本，`HPSL_E2E=1` 开启、默认 skip；覆盖新建 → 归档 → 取消归档 → 错误名删除 → 正名删除、零 console error、375px 无溢出（M40）
