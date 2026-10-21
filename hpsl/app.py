@@ -371,6 +371,10 @@ def main(argv: list[str] | None = None) -> None:
     sub_restore = sub.add_parser("restore", help="从项目 backups/ 内快照恢复 project.db")
     sub_restore.add_argument("--pid", required=True, help="项目 id")
     sub_restore.add_argument("--file", required=True, help="备份文件（文件名或 backups/ 内路径）")
+    sub_trash = sub.add_parser("trash", help="查看/清理删除项目的回收目录（HPSL_HOME/trash）")
+    sub_trash.add_argument("action", choices=["list", "purge"], help="list 列表；purge 清理")
+    sub_trash.add_argument("--days", type=int, default=30, help="purge 只删早于 N 天的目录（默认 30）")
+    sub_trash.add_argument("--yes", action="store_true", help="purge 真正删除；不加只预览")
     args = parser.parse_args(argv)
     if args.cmd == "serve":
         serve(host=args.host, port=args.port, restore=not args.no_restore)
@@ -416,6 +420,31 @@ def main(argv: list[str] | None = None) -> None:
             f"[restore] {args.pid}: restored_from={info['restored_from']} "
             f"pre_restore={info['pre_restore']} objects={info['objects']}"
         )
+    elif args.cmd == "trash":
+        import time
+
+        from . import projects as _projects
+
+        if args.action == "list":
+            rows = _projects.list_trash()
+            for item in rows:
+                stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(item["mtime"]))
+                print(f"[trash] {item['name']}  ({stamp})")
+            if not rows:
+                print("[trash] empty")
+        else:
+            preview = _projects.purge_trash(args.days, dry_run=True)
+            if not preview["candidates"]:
+                print(f"[trash] nothing older than {args.days} days")
+            elif not args.yes:
+                print(
+                    f"[trash] {len(preview['candidates'])} 个候选（>{args.days} 天）："
+                    + "、".join(preview["candidates"])
+                )
+                print("[trash] 未删除；确认后加 --yes")
+            else:
+                res = _projects.purge_trash(args.days, dry_run=False)
+                print(f"[trash] deleted {res['deleted']} 个回收目录")
     else:
         parser.print_help()
 

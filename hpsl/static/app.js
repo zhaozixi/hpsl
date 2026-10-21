@@ -242,4 +242,13 @@ if (window.htmx) { window.htmx.config.allowEval = false; }
     if (created && el.reset) el.reset();
     if (typeof window.hpslAfterCreate === 'function') window.hpslAfterCreate();
   });
+
+  // 建单元成功：服务端用 HX-Trigger 发事件（不再塞 <script>，严格 CSP 下内联脚本会被拦）。
+  document.body.addEventListener('hpsl:unit-created', function () {
+    var f = document.querySelector('form[hx-post="/api/v1/units"]');
+    if (!f) return;
+    if (f.reset) f.reset();
+    var input = f.querySelector('input[name="title"]');
+    if (input) input.focus();
+  });
 })();

@@ -222,12 +222,19 @@ def _secrets_dir_path() -> Path:
 
 
 def provider_has_key(provider: str) -> bool:
-    """该厂商当前是否有可用密钥（锁定态视为没有；异常一律按没有处理）。"""
+    """该厂商当前是否有可用密钥（锁定态视为没有；异常记录后按没有处理）。"""
     from ..secrets import keystore
 
     try:
         return bool(keystore.key_status(provider, secrets_dir=_secrets_dir_path()).get("has_key"))
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - 密钥库损坏/权限错误不能阻断页面
+        # M41/F-08：不再静默吞掉——否则「保险库损坏」会表现成「没配置密钥」，
+        # 用户被引导去重填，真实原因只留在黑箱里。
+        import logging
+
+        logging.getLogger("hpsl").warning(
+            "读取厂商 %s 的密钥状态失败，按未配置处理：%s", provider, exc
+        )
         return False
 
 

@@ -64,6 +64,9 @@ def test_create_unit_htmx_updates_list_in_place(client, csrf_headers):
     assert "已创建单元" in r.text
     assert 'hx-swap-oob="true"' in r.text
     assert "HTMX 建单元" in r.text
+    # M41：不再用内联 <script> 重置表单（严格 CSP 会拦），改 HX-Trigger 事件
+    assert "<script" not in r.text
+    assert "hpsl:unit-created" in r.headers.get("HX-Trigger", "")
     assert db.query(pid, "SELECT count(*) c FROM unit")[0]["c"] == 1
 
 

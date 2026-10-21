@@ -44,6 +44,21 @@ function log(ok, label, detail) {
   await page.waitForTimeout(2000);
   log(!page.url().includes('/projects/new'), '创建成功后离开新建页', page.url());
 
+  // 2b. 密钥页（M38）：三家厂商 + 页面不出现完整密钥
+  await page.goto(BASE + '/keys', { waitUntil: 'networkidle' });
+  const keyRows = await page.locator('.key-row').count();
+  log(keyRows === 3, '密钥页展示三家厂商', 'rows=' + keyRows);
+  const keysHtml = await page.content();
+  log(!/sk-[A-Za-z0-9._-]{20,}/.test(keysHtml), '密钥页不含完整密钥');
+
+  // 2c. 单元创建（主链冒烟）：创建后就地出现在列表
+  await page.goto(BASE + '/unit', { waitUntil: 'networkidle' });
+  await page.fill('input[name="title"]', 'E2E单元');
+  await page.click('form[hx-post="/api/v1/units"] button[type="submit"]');
+  await page.waitForTimeout(1200);
+  const unitList = await page.locator('#unit-list-section').innerText();
+  log(unitList.includes('E2E单元'), '单元创建后出现在列表');
+
   // 3. 新项目出现在活跃列表
   await page.goto(BASE + '/', { waitUntil: 'networkidle' });
   const activeRow = page.locator('#project-list li', { hasText: NAME });

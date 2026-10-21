@@ -35,6 +35,9 @@ def test_project_lifecycle_in_browser(live_server, node_playwright, flows_dir):
     # 断言剧本自己确实跑了核心步骤，避免"空跑也 exit 0"的假绿
     for must in (
         "PASS | 新项目出现在活跃列表",
+        "PASS | 密钥页展示三家厂商",
+        "PASS | 密钥页不含完整密钥",
+        "PASS | 单元创建后出现在列表",
         "PASS | 归档后离开活跃列表",
         "PASS | 取消归档后回到活跃列表",
         "PASS | 名称不符时给出错误提示",

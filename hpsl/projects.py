@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -277,7 +278,8 @@ def delete_project(pid: str, confirm_name: str, actor: str = "user") -> str:
     """
     row = _read_project_row(pid)
     expect = row["name"] or pid
-    if not isinstance(confirm_name, str) or confirm_name.strip() != expect:
+    # M41/F-05：严格逐字匹配（不 strip）。首尾空格也算不一致——文档承诺的就是逐字。
+    if not isinstance(confirm_name, str) or confirm_name != expect:
         raise BizError("C400001", msg=f"确认的项目名不匹配，未删除。请输入「{expect}」再试")
 
     src = _db.safe_path(pid)  # 防目录穿越（C400002）
@@ -294,6 +296,47 @@ def delete_project(pid: str, confirm_name: str, actor: str = "user") -> str:
     if _active_pid == pid:
         _clear_active()
     return str(dest)
+
+
+def list_trash() -> list[dict]:
+    """列出 `HPSL_HOME/trash/` 下的回收目录（按修改时间倒序）。"""
+    root = _config.trash_root()
+    if not root.exists():
+        return []
+    out: list[dict] = []
+    for child in root.iterdir():
+        if not child.is_dir():
+            continue
+        try:
+            mtime = child.stat().st_mtime
+        except OSError:
+            continue
+        out.append({"name": child.name, "path": str(child), "mtime": mtime})
+    out.sort(key=lambda x: x["mtime"], reverse=True)
+    return out
+
+
+def purge_trash(older_than_days: int = 30, *, dry_run: bool = True) -> dict:
+    """清理回收目录：只删除修改时间早于 `older_than_days` 的目录。
+
+    默认 dry-run（只返回候选），真正删除必须由 CLI 显式 `--yes` 触发——
+    M40 的取舍「程序不替用户做不可逆操作」仍然成立，这里只是给一个可控出口。
+    """
+    if not isinstance(older_than_days, int) or older_than_days < 0:
+        raise BizError("C400001", msg="older_than_days 须为非负整数")
+    cutoff = time.time() - older_than_days * 86400
+    candidates = [x for x in list_trash() if x["mtime"] < cutoff]
+    if dry_run:
+        return {
+            "dry_run": True,
+            "deleted": 0,
+            "candidates": [x["name"] for x in candidates],
+        }
+    deleted: list[str] = []
+    for item in candidates:
+        shutil.rmtree(item["path"])
+        deleted.append(item["name"])
+    return {"dry_run": False, "deleted": len(deleted), "candidates": []}
 
 
 def restore_last_active() -> Optional[ProjectVO]:

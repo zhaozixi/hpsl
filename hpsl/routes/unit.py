@@ -466,13 +466,16 @@ async def create_unit_api(req: Request):
             1,
         )
         msg = f'<p class="ok">已创建单元「{_html.escape(title)}」，已加入下方列表。</p>'
-        # 就地刷新不会清空表单，用户容易误以为没提交成功而重复点击；补一段 reset + 聚焦。
-        # HTMX 默认 allowScriptEval=true 会执行 swap 进来的 script；若被关闭则只是不清空，无副作用。
-        reset = (
-            "<script>(function(){var f=document.querySelector('form[hx-post=\"/api/v1/units\"]');"
-            "if(!f){return;}f.reset();var i=f.querySelector('input[name=\"title\"]');if(i){i.focus();}})()</script>"
+        # 不在响应里塞 <script>（严格 CSP 会拦），改由 HX-Trigger 发事件，
+        # app.js 监听后 reset + 聚焦；HTMX 负责把事件派发到 body。
+        return HTMLResponse(
+            msg + oob,
+            headers={
+                "HX-Trigger": json.dumps(
+                    {"hpsl:unit-created": {"title": title}}, ensure_ascii=True
+                )
+            },
         )
-        return HTMLResponse(msg + reset + oob)
     return ok(
         {
             "id": uid,

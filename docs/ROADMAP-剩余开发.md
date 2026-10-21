@@ -1,7 +1,7 @@
 # HPSL 剩余开发清单（Roadmap）
 
 > 更新：2026-10-21（M40 项目归档/删除 + 浏览器 E2E 之后）
-> 基线：M0–M40 已交付；全量 **756 passed / 4 skipped**（其中 1 skipped 为默认关闭的 E2E）
+> 基线：M0–M40 已交付；全量 **761 passed / 4 skipped**（其中 1 skipped 为默认关闭的 E2E）
 > P0 / P1 / P2（含 C9/C12）已清零；剩余仅 `pipx` 实测与真实凭据项。
 > 入口现状：`hpsl` 命令与 `python -m hpsl` 两条路均可用（见 `FIX-启动入口与安装说明.md`）。
 
@@ -50,7 +50,7 @@
 
 ## 3. 发布前检查清单
 
-1. `pytest -q` ≥ 756 passed（4 skipped = 3 个无内联脚本的模板 + 1 个默认关闭的 E2E，属预期）；
+1. `pytest -q` ≥ 761 passed（4 skipped = 3 个无内联脚本的模板 + 1 个默认关闭的 E2E，属预期）；
    - 本机注意：safe-delete hook 会让进程退出码为 1（清理 `pytest-of-*` 临时目录被 fail-closed 拒绝），
      判读以 `--junit-xml` 报表或「进度条无 `F`/`E`」为准，非测试失败；
 2. `HPSL_E2E=1 pytest tests/e2e -q` → 1 passed（浏览器真点击，约 25s；缺 node/playwright 自动 skip）；
@@ -59,7 +59,8 @@
 5. `hpsl --help` 与 `python -m hpsl --help` 均可用（安装步骤必须含 `pip install -e .`，否则只有后者可用）；
 6. `python scripts/live_check.py --model deepseek-flash --role clerk --stream` → 退出码 0；
 7. 设好 `HPSL_MASTER_PASSPHRASE`，`hpsl serve` 后走一遍：建项目 → 建单元 → 产出 → 尝试 → 闭环 → 复测 → 周盘点 → 撤销；
-8. 轮换测试用 API key；确认仓库无 `.fernet`/`*.db`/key。
+8. 需要时用 `hpsl trash list` / `hpsl trash purge --days 30 --yes` 管理删除项目的回收目录；
+9. 轮换测试用 API key；确认仓库无 `.fernet`/`*.db`/key。
 
 ---
 
