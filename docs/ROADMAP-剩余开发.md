@@ -1,7 +1,7 @@
 # HPSL 剩余开发清单（Roadmap）
 
-> 更新：2026-10-21（M40 项目归档/删除 + 浏览器 E2E 之后）
-> 基线：M0–M40 已交付；全量 **761 passed / 5 skipped**（其中 2 skipped 为默认关闭的 E2E）
+> 更新：2026-10-21（M41 扫描收口 + REF-5 二轮扫描之后）
+> 基线：M0–M41 已交付；全量 **761 passed / 5 skipped**（其中 2 skipped 为默认关闭的 E2E）
 > P0 / P1 / P2（含 C9/C12）已清零；剩余仅 `pipx` 实测与真实凭据项。
 > 入口现状：`hpsl` 命令与 `python -m hpsl` 两条路均可用（见 `FIX-启动入口与安装说明.md`）。
 
@@ -144,3 +144,21 @@
 | E2E | `tests/e2e/`：子进程起真实服务（避免 autouse `isolated_home` 把同进程服务带偏）+ Playwright 剧本；`HPSL_E2E=1` 开启、默认 skip；缺 node/playwright 自动 skip；剧本 15 步 |
 | 验证 | 754 passed / 4 skipped（新增 14 例）；E2E 1 passed / 23s；BASELINE INTACT；打包 PASS（108 条目） |
 | 未做 | trash 不自动清理（何时算"真不要了"只有用户知道）；界面化回收站；三问进度量 |
+
+---
+
+## 10. M41 变更摘要（2026-10-21，扫描收口）
+
+> 本批不新增业务能力，只做 REF-4 发现项的修复、台账回填与自检工具加固。
+
+| 类别 | 内容 |
+|---|---|
+| 交互边界 | 归档项目禁止被切换为当前项目（`A010001`）——页面已隐藏按钮，但 API/旧链接仍能绕过；删除确认改严格逐字（不 `strip()`，尾随空格即 `C400001`） |
+| 展示 | 极小人民币金额三段位数：<0.0001 取 6 位、[0.0001,0.01) 取 4 位、≥0.01 取 2 位（原固定 4 位会把 `$0.000001` 显示成 `¥0.0000`） |
+| 可观测 | `/healthz` `/readyz` 的 `phase` 更到 M40；`provider_has_key` 异常分支写 `logging.warning`（仍返回 False，页面不 500，但排障能看到真实原因） |
+| 回收站出口 | `hpsl trash list`、`hpsl trash purge --days N`（**只预览**）、`--yes` 才真删；程序仍不自动清理 |
+| E2E | 三处子进程统一 `encoding="utf-8"`（原按 GBK 解码 UTF-8 中文 → 读取线程崩、stdout 空）；新增第二条剧本「密钥保存/测试/清除 + 单元七态」 |
+| 台账 | REF-1/REF-2/REF-3 回填至 M40，README 同步 |
+| 工程债（REF-5） | `scripts/check_package.py` 可重入化：构建前后各清 `build/`，清理失败重试并显式告警（原 `ignore_errors=True` 静默失败 → 第二次构建必撞 `WinError 183`） |
+| 验证 | **761 passed / 5 skipped**；E2E **2 passed / 36s**；74 API + 18 页面；16 库对象 / 20 索引 / 零 DDL；BASELINE INTACT；打包 PASS（108 条目，**连跑两次仍 PASS**） |
+| 未做 | 界面化回收站；三问进度量；真实 key 的 `live_check.py` 与 `pipx install .`（需有网/有 key 环境） |

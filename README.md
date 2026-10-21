@@ -1,6 +1,6 @@
 # HPSL · 本地个人学习管家
 
-HPSL（项目制学习框架工具，Apache-2.0）是一个**本地运行的个人学习管家**：把学习目标拆成单元，按「学 → 练 → 考 → 复习」带流程推进，并记账（AI 花费）、记卡片、画概念图，用治理度量呈现学习进展。当前为 v0.1，已推进至 **M0–M40**。
+HPSL（项目制学习框架工具，Apache-2.0）是一个**本地运行的个人学习管家**：把学习目标拆成单元，按「学 → 练 → 考 → 复习」带流程推进，并记账（AI 花费）、记卡片、画概念图，用治理度量呈现学习进展。当前为 v0.1，已推进至 **M0–M41**。
 
 ## 技术栈（实现期冻结）
 
@@ -48,6 +48,11 @@ hpsl serve
 # 等价写法：python -m hpsl serve（未装 `pip install -e .`、或 venv 重建后都可用）
 # 浏览器打开 http://127.0.0.1:8765
 
+# 探活怎么看：/healthz 判「进程活着」（永远 200）；/readyz 判「数据目录可读写」。
+# 全新 HPSL_HOME 下尚未建过项目时 /readyz 会返回 503——这是就绪语义，不是启动失败。
+curl http://127.0.0.1:8765/healthz
+curl http://127.0.0.1:8765/readyz
+
 # 启动时默认「恢复到上次所在项目」（读各项目 config 里的 last_active_at，只读不写）。
 # 想要每次从「未选择项目」开始，用任一方式关掉：
 hpsl serve --no-restore
@@ -59,10 +64,10 @@ hpsl trash list
 hpsl trash purge --days 30          # 只预览候选，不删除
 hpsl trash purge --days 30 --yes    # 真正删除早于 30 天的回收目录
 
-# 运行全量测试（M0–M40：761 例通过 + 5 例跳过，含零 DDL 守护）
+# 运行全量测试（M0–M41：761 例通过 + 5 例跳过，含零 DDL 守护）
 .venv/Scripts/python.exe -m pytest -q
 
-# 浏览器 E2E（默认不跑：真起服务 + 真开 Chromium；2 条剧本约 32 秒；缺 node/playwright 会自动 skip）
+# 浏览器 E2E（默认不跑：真起服务 + 真开 Chromium；2 条剧本约 36 秒；缺 node/playwright 会自动 skip）
 HPSL_E2E=1 .venv/Scripts/python.exe -m pytest tests/e2e -q
 ```
 
@@ -99,7 +104,7 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 安全：本地单机单用户、回环监听；Host/Origin **精确匹配**（含端口）+ 写请求 CSRF 双提交 + 五维限流（process/route/llm_freq/sse_concurrency/write_freq）；无账号体系、无多租户；`/docs` 等文档端点关闭。
 - 密钥：keyring 优先；否则 `HPSL_MASTER_PASSPHRASE` + Argon2id(64MiB/3/4) + **每文件随机 salt**，无口令即拒绝（不降级明文），口令不落盘、不入日志/导出。
 
-## 当前能力（M0–M40）
+## 当前能力（M0–M41）
 
 - 多项目数据底座与审计（M0）
 - 单元八步状态机（INIT → … → CLOSED）+ 复测队列（2/7/21 天）（M2 / M6）
@@ -138,3 +143,4 @@ python scripts/live_check.py --model deepseek-flash --role clerk
 - 数据与配置能力：密钥可清除（不解密，锁定态也能撤销填错的 key）、快照可单份删除（白名单校验 + 二次确认）、六角色可绑定具体模型（无密钥时报错不静默降级）、交叉验证前预检厂商密钥（不足两家区分 0 家 / 仅 1 家并说明未产生费用）（M39）
 - 项目归档与删除：归档写 `config.archived_at`（零 DDL，幂等、不影响备份与统计、启动恢复跳过）收进列表折叠区；删除要求逐字输入项目名，整目录 rename 到 `HPSL_HOME/trash/`（可恢复，不做不可逆销毁）（M40）
 - 浏览器 E2E 进套件：`tests/e2e/` 用子进程起真实服务 + Playwright 剧本，`HPSL_E2E=1` 开启、默认 skip；覆盖新建 → 归档 → 取消归档 → 错误名删除 → 正名删除、零 console error、375px 无溢出（M40）
+- 回收站管理与扫描收口：`hpsl trash list` / `hpsl trash purge --days N`（默认只预览，`--yes` 才真删）给「不自动清理」补上显式出口；同时修归档项目仍可被切换（`A010001`）、删除确认严格逐字、极小人民币金额改 6 位、密钥状态读取异常记日志、E2E 统一 UTF-8 解码并扩到密钥页 / 单元七态（M41）
