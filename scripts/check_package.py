@@ -20,7 +20,7 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -68,7 +68,11 @@ def _pick_python(explicit: str | None) -> str:
         if not Path(p).exists():
             continue
         probe = subprocess.run(
-            [p, "-c", "import setuptools"], capture_output=True, text=True
+            [p, "-c", "import setuptools"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if probe.returncode == 0:
             return p
@@ -78,6 +82,28 @@ def _pick_python(explicit: str | None) -> str:
         "或先装：pip install setuptools wheel"
     )
     raise SystemExit(1)
+
+
+def _purge_build_dir() -> None:
+    """清掉仓库内 `build/`——`pip wheel` 的默认产物落点。
+
+    为什么必须清：Windows 上第二次构建时 `build/bdist.win-amd64/wheel/hpsl-*.dist-info`
+    已存在会直接 `WinError 183`，表现为「打包失败」，但其实是残留目录问题（REF-5 F-01）。
+    为什么清理后还要重试：刚退出的构建子进程可能短暂持有句柄，`rmtree` 会失败；
+    此处重试三轮，仍失败就**明确告警**而不是静默忽略——静默正是上一版把问题藏起来的根源。
+    """
+    build = ROOT / "build"
+    for attempt in range(3):
+        if not build.exists():
+            return
+        shutil.rmtree(build, ignore_errors=True)
+        if not build.exists():
+            return
+        time.sleep(0.2 * (attempt + 1))
+    print(
+        f"警告：无法清理构建残留 {build}，下次构建可能报 WinError 183，请手动删除后重试。",
+        file=sys.stderr,
+    )
 
 
 def _build(outdir: Path, python: str) -> Path:
@@ -92,7 +118,11 @@ def _build(outdir: Path, python: str) -> Path:
         "-w",
         str(outdir),
     ]
-    proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    # 固定 UTF-8 解码：中文 Windows 的默认 locale 是 GBK，pip 输出含非 GBK 字节时会
+    # UnicodeDecodeError 把真实错误吞成空输出（与 tests/e2e 的 F-01 同类）。
+    proc = subprocess.run(
+        cmd, cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace"
+    )
     if proc.returncode != 0:
         print("构建失败：\n" + (proc.stdout or "")[-2000:] + (proc.stderr or "")[-2000:])
         raise SystemExit(1)
@@ -147,13 +177,13 @@ def main() -> int:
     if outdir.exists():
         shutil.rmtree(outdir)
     outdir.mkdir()
+    # 构建前先清历史残留（上一轮被中断、或被 --keep 之外的原因留下）
+    _purge_build_dir()
     try:
         wheel = _build(outdir, python)
         return _check(wheel)
     finally:
-        build = ROOT / "build"
-        if build.exists():
-            shutil.rmtree(build, ignore_errors=True)
+        _purge_build_dir()
         if not args.keep:
             shutil.rmtree(outdir, ignore_errors=True)
 
