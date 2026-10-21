@@ -1,7 +1,7 @@
 # HPSL 剩余开发清单（Roadmap）
 
 > 更新：2026-10-21（M40 项目归档/删除 + 浏览器 E2E 之后）
-> 基线：M0–M40 已交付；全量 **761 passed / 4 skipped**（其中 1 skipped 为默认关闭的 E2E）
+> 基线：M0–M40 已交付；全量 **761 passed / 5 skipped**（其中 2 skipped 为默认关闭的 E2E）
 > P0 / P1 / P2（含 C9/C12）已清零；剩余仅 `pipx` 实测与真实凭据项。
 > 入口现状：`hpsl` 命令与 `python -m hpsl` 两条路均可用（见 `FIX-启动入口与安装说明.md`）。
 
@@ -50,10 +50,10 @@
 
 ## 3. 发布前检查清单
 
-1. `pytest -q` ≥ 761 passed（4 skipped = 3 个无内联脚本的模板 + 1 个默认关闭的 E2E，属预期）；
+1. `pytest -q` ≥ 761 passed（5 skipped = 3 个无内联脚本的模板 + 2 个默认关闭的 E2E，属预期）；
    - 本机注意：safe-delete hook 会让进程退出码为 1（清理 `pytest-of-*` 临时目录被 fail-closed 拒绝），
      判读以 `--junit-xml` 报表或「进度条无 `F`/`E`」为准，非测试失败；
-2. `HPSL_E2E=1 pytest tests/e2e -q` → 1 passed（浏览器真点击，约 25s；缺 node/playwright 自动 skip）；
+2. `HPSL_E2E=1 pytest tests/e2e -q` → **2 passed**（项目生命周期 + 密钥保存/测试/清除 + 单元七态，约 32s；缺 node/playwright 自动 skip）；
 3. `python .workbuddy/delivery/verify_baseline.py` → `BASELINE INTACT`；
 4. `python scripts/check_package.py` → `结果: PASS`（验证 wheel 打全了模板/静态/提示/YAML）；
 5. `hpsl --help` 与 `python -m hpsl --help` 均可用（安装步骤必须含 `pip install -e .`，否则只有后者可用）；

@@ -59,10 +59,10 @@ hpsl trash list
 hpsl trash purge --days 30          # 只预览候选，不删除
 hpsl trash purge --days 30 --yes    # 真正删除早于 30 天的回收目录
 
-# 运行全量测试（M0–M40：761 例通过 + 4 例跳过，含零 DDL 守护）
+# 运行全量测试（M0–M40：761 例通过 + 5 例跳过，含零 DDL 守护）
 .venv/Scripts/python.exe -m pytest -q
 
-# 浏览器 E2E（默认不跑：真起服务 + 真开 Chromium，约 25 秒；缺 node/playwright 会自动 skip）
+# 浏览器 E2E（默认不跑：真起服务 + 真开 Chromium；2 条剧本约 32 秒；缺 node/playwright 会自动 skip）
 HPSL_E2E=1 .venv/Scripts/python.exe -m pytest tests/e2e -q
 ```
 

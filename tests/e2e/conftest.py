@@ -86,7 +86,7 @@ def live_server(tmp_path_factory):
         [sys.executable, "-m", "hpsl", "serve", "--port", str(port), "--no-restore"],
         cwd=str(ROOT),
         env=env,
-        stdout=subprocess.PIPE,
+        stdout=open(home / "server.log", "w", encoding="utf-8", errors="replace"),
         stderr=subprocess.STDOUT,
         text=True,
         encoding="utf-8",
@@ -96,8 +96,8 @@ def live_server(tmp_path_factory):
     try:
         if not _wait_http(base + "/"):
             proc.terminate()
-            out = proc.stdout.read() if proc.stdout else ""
-            pytest.fail(f"E2E 服务未能启动（{base}）：\n{out[-2000:]}")
+            log = (home / "server.log").read_text(encoding="utf-8", errors="replace")
+            pytest.fail(f"E2E 服务未能启动（{base}）：\n{log[-2000:]}")
         yield {"base": base, "home": home}
     finally:
         proc.terminate()
